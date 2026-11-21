@@ -954,10 +954,26 @@
     toast('Insumo salvo.');
   }
 
-  function saleForm(existing) {
+  async function saleForm(existing) {
     const products = S().products.slice().sort(function (a, b) { return String(a.name || '').localeCompare(String(b.name || ''), 'pt-BR'); });
     const clients = S().clients.slice().sort(function (a, b) { return String(a.name || '').localeCompare(String(b.name || ''), 'pt-BR'); });
+    let sellers = [];
+    if (isAdmin()) {
+      try {
+        const list = await Auth.listUsers();
+        usersCache = list || [];
+        sellers = usersCache.filter(function (u) { return u.active !== false; });
+      } catch (e) {
+        console.warn('Não foi possível carregar usuários:', e.message);
+      }
+    }
+    if (!sellers.length) {
+      sellers = [{ id: currentSellerId(), full_name: currentSellerName() }];
+    }
+    sellers.sort(function (a, b) { return String(a.full_name || '').localeCompare(String(b.full_name || ''), 'pt-BR'); });
+    const sellerValue = existing ? existing.sellerId : currentSellerId();
     return [
+      { key: 'sellerId', label: 'Vendedor', type: 'select', options: sellers.map(function (u) { return [u.id, u.full_name || u.email || 'Usuário']; }), value: sellerValue, full: true, disabled: !isAdmin(), hint: isAdmin() ? 'Escolha quem realizou a venda.' : 'A venda será atribuída a você.' },
       { key: 'productPick', label: 'Selecionar produto cadastrado', type: 'select', options: [['', '— preencher manualmente —']].concat(products.map(function (p) { return [p.id, p.name + (p.category ? ' · ' + p.category : '')]; })), value: '', full: true, hint: 'Ao selecionar, preenche produto, custo e valor. Você ainda pode editar.' },
       { key: 'product', label: 'Produto / serviço', value: existing ? existing.product : '', required: true, full: true },
       { key: 'client', label: 'Cliente', type: 'datalist', options: clients.map(function (c) { return c.name; }), value: existing ? existing.client : '', placeholder: 'Selecione ou digite um nome' },
@@ -990,6 +1006,13 @@
   function saveSale(data, id, old) {
     const payload = Object.assign({}, data);
     delete payload.productPick;
+    if (isAdmin()) {
+      const chosen = findUser(payload.sellerId);
+      payload.sellerName = chosen ? chosen.full_name : currentSellerName();
+    } else {
+      payload.sellerId = currentSellerId();
+      payload.sellerName = currentSellerName();
+    }
     const item = Object.assign({ id: id || Store.uid('sale') }, payload);
     upsert('sales', item);
     if (!old && payload.material && numOr(payload.consumedQty) > 0) consumeStock(payload.material, numOr(payload.consumedQty), 'Venda: ' + payload.product);
@@ -1227,7 +1250,11 @@
           break;
         }
 
-        case 'sale-new': openModal('Nova venda', 'Registro manual de receita e custo.', saleForm(), function (d) { saveSale(d); }, 'Salvar venda', wireSaleForm); break;
+        case 'sale-new': {
+          const fields = await saleForm();
+          openModal('Nova venda', 'Registro manual de receita e custo.', fields, function (d) { saveSale(d); }, 'Salvar venda', wireSaleForm);
+          break;
+        }
 
         case 'user-new':
           if (!isAdmin()) { toast('Acesso negado.', true); break; }

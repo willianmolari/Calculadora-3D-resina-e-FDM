@@ -16,7 +16,7 @@ Calculadora de custos e orçamentos para impressão 3D **FDM** e **resina**, com
 - **Banco de dados** — IndexedDB no navegador (funciona offline) + sincronização com **Supabase gratuito** (Postgres), com exportação/importação de backup JSON.
 - **Acesso por perfil** — login obrigatório para qualquer tela. Administradores veem tudo; vendedores acessam calculadora, orçamentos, vendas próprias, produtos (somente leitura) e sua comissão.
 - **Comissão** — padrão de 50% do lucro (`(valor da venda − custo) ÷ 2`), editável em **Configurações → Mão de obra, margens e mercado**.
-- **Quem vendeu?** — vendas e orçamentos registram `sellerId`/`sellerName`. O dashboard tem filtro por vendedor e ranking com faturamento e comissão.
+- **Quem vendeu?** — ao criar uma venda, o admin seleciona o vendedor na lista de usuários ativos; o vendedor comum fica fixado nele. Vendas e orçamentos registram `sellerId`/`sellerName`. O dashboard tem filtro por vendedor e ranking com faturamento e comissão.
 - **Exclusão de venda** — vendedor não exclui diretamente: abre uma solicitação com motivo (com aviso por e-mail ao admin). Somente admin aprova/recusa em **Solicitações**. A aprovação estorna o material consumido ao estoque e mantém o registro da solicitação como trilha de auditoria.
 - **Compartilhamento** — produtos, clientes e orçamentos são compartilhados entre todos os usuários. Cada vendedor vê apenas suas próprias vendas/faturamento; o admin vê todas.
 
