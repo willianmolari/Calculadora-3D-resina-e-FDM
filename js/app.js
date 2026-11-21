@@ -368,6 +368,26 @@
   }
 
   /* ---------- Orçamentos ---------- */
+  function linkedSale(q) {
+    return S().sales.find(function (s) { return s.quoteId === q.id || (q.number && s.quoteNumber === q.number); });
+  }
+
+  function convertQuoteToSale(q) {
+    if (!q.result) return 'Este orçamento ainda não tem resultado calculado.';
+    if (linkedSale(q)) return 'Este orçamento já possui uma venda registrada.';
+    const r = q.result;
+    const sale = {
+      id: Store.uid('sale'), product: q.title, client: q.clientName, date: new Date().toISOString().slice(0, 10),
+      qty: r.qty, cost: r.totalCost, value: r.price,
+      material: r.isResin ? 'resin' : q.input.material,
+      consumedQty: r.consumedQty, quoteId: q.id, quoteNumber: q.number
+    };
+    S().sales.push(sale);
+    consumeStock(sale.material, sale.consumedQty, 'Orçamento ' + q.number);
+    q.status = 'done';
+    return 'Venda registrada e estoque baixado.';
+  }
+
   function renderQuotes() {
     const st = S();
     const filter = $('quoteFilter').value;
@@ -379,6 +399,8 @@
       list.map(function (q) {
         const r = q.result || {};
         const stt = statusMap[q.status] || statusMap.draft;
+        const next = q.status === 'draft' ? 'sent' : q.status === 'sent' ? 'approved' : 'done';
+        const converted = !!linkedSale(q);
         return '<tr><td><strong>' + esc(q.number) + '</strong></td>' +
           '<td><strong>' + esc(q.title) + '</strong><span class="sub">' + esc(q.clientName || 'Consumidor final') + '</span></td>' +
           '<td>' + dateBR(q.createdAt) + '</td><td class="num">' + money(r.totalCost) + '</td><td class="num"><strong>' + money(r.price) + '</strong></td>' +
@@ -387,7 +409,10 @@
           '<td><div class="row-actions">' +
           '<button class="icon-action" data-action="quote-pdf" data-id="' + q.id + '" title="Gerar PDF"><span data-icon="pdf"></span></button>' +
           '<button class="icon-action" data-action="quote-edit" data-id="' + q.id + '" title="Editar"><span data-icon="edit"></span></button>' +
-          (q.status !== 'done' ? '<button class="icon-action" data-action="quote-status" data-id="' + q.id + '" data-status="' + (q.status === 'draft' ? 'sent' : q.status === 'sent' ? 'approved' : 'done') + '" title="Avançar status"><span data-icon="send"></span></button>' : '') +
+          (q.status !== 'done' ? '<button class="icon-action" data-action="quote-status" data-id="' + q.id + '" data-status="' + next + '" title="' + (next === 'done' ? 'Aprovar e concluir' : 'Avançar status') + '"><span data-icon="send"></span></button>' : '') +
+          (converted
+            ? '<span class="badge purple" title="Venda registrada a partir deste orçamento">Venda registrada</span>'
+            : '<button class="btn secondary small sale-convert" data-action="quote-to-sale" data-id="' + q.id + '" title="Converter em venda e baixar estoque"><span data-icon="check"></span> Virar venda</button>') +
           '<button class="icon-action danger" data-action="quote-delete" data-id="' + q.id + '" title="Excluir"><span data-icon="trash"></span></button>' +
           '</div></td></tr>';
       }).join('') + '</tbody></table>';
@@ -821,21 +846,23 @@
         case 'quote-status': {
           const q = findBy('quotes', id);
           if (!q) return;
-          q.status = action.dataset.status;
-          if (q.status === 'done') {
-            const r = q.result;
-            const sale = {
-              id: Store.uid('sale'), product: q.title, client: q.clientName, date: new Date().toISOString().slice(0, 10),
-              qty: r.qty, cost: r.totalCost, value: r.price,
-              material: r.isResin ? 'resin' : q.input.material,
-              consumedQty: r.consumedQty, quoteId: q.id, quoteNumber: q.number
-            };
-            st.sales.push(sale);
-            consumeStock(sale.material, sale.consumedQty, 'Orçamento ' + q.number);
-            toast('Venda registrada e estoque baixado.');
+          const next = action.dataset.status;
+          if (next === 'done') {
+            const msg = convertQuoteToSale(q);
+            toast(msg, msg.indexOf('já') >= 0 || msg.indexOf('não tem') >= 0);
           } else {
+            q.status = next;
             toast('Status atualizado para ' + q.status + '.');
           }
+          Store.save();
+          break;
+        }
+        case 'quote-to-sale': {
+          const q = findBy('quotes', id);
+          if (!q) return;
+          if (!confirm('Converter o orçamento ' + q.number + ' em venda? O estoque será baixado.')) return;
+          const msg = convertQuoteToSale(q);
+          toast(msg, msg.indexOf('já') >= 0 || msg.indexOf('não tem') >= 0);
           Store.save();
           break;
         }
@@ -1103,6 +1130,7 @@
 
   function showLogin(msg) {
     appStarted = false;
+    booted = false;
     $('loginScreen').classList.remove('hidden');
     document.querySelector('.app-shell').classList.add('hidden');
     showLoginError(msg);
@@ -1112,6 +1140,7 @@
 
   function showApp() {
     appStarted = true;
+    booted = true;
     $('loginScreen').classList.add('hidden');
     document.querySelector('.app-shell').classList.remove('hidden');
     showLoginError('');
@@ -1161,11 +1190,10 @@
 
   async function init() {
     await Store.init();
+    Store.onChange(function () { if (booted) renderView(); });
     try { await Auth.init(); }
     catch (e) { console.error(e); }
     if (!Auth.ready) { showLogin(); return; }
-    Store.onChange(function () { renderView(); });
-    booted = true;
     showApp();
   }
   init();

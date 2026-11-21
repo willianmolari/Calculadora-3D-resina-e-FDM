@@ -254,6 +254,8 @@ td .sub { display: block; font-size: 10px; color: var(--text-tertiary); margin-t
 .icon-action:hover { background: var(--fill); color: var(--blue); }
 .icon-action.danger:hover { color: var(--red); }
 .icon-action svg { width: 15px; height: 15px; }
+.sale-convert { white-space: nowrap; }
+.sale-convert svg { color: var(--green); width: 14px; height: 14px; }
 
 /* ---------- Calculator ---------- */
 .calc-layout { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); gap: 20px; align-items: start; }

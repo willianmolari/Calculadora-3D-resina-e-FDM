@@ -10,7 +10,7 @@ Calculadora de custos e orçamentos para impressão 3D **FDM** e **resina**, com
 - **Margem sobre venda** — `preço = custo ÷ (1 − margem)`. Ideal 65%, mínimo 40%, ambos editáveis. O app avisa quando o preço fica abaixo do mínimo.
 - **Comparativo de mercado** — mostra o R$/g da peça contra a faixa praticada (padrão R$ 0,80 a R$ 2,50/g).
 - **Administração** — dashboard com faturamento, custos, lucro, margem, gráfico 6 meses, ranking de produtos e alertas; vendas com receita/custo/lucro; catálogo de produtos; serviços; clientes.
-- **Estoque** — entradas, saídas, ajustes e alertas de reposição. Ao marcar um orçamento como **Concluído**, uma venda é criada e o material é baixado do estoque automaticamente.
+- **Estoque** — entradas, saídas, ajustes e alertas de reposição. Na lista de orçamentos, o botão **Virar venda** converte o orçamento em venda e baixa o material do estoque. O mesmo acontece ao avançar o status até **Concluído**.
 - **Orçamentos** — salvar, editar, avançar status (rascunho → enviado → aprovado → concluído) e gerar **PDF** com dados da empresa, do cliente, condições e valor.
 - **Configurações** — *todos* os valores são editáveis: materiais, pintura, energia, máquinas, purga do AMS, margens, taxas, perdas, dados da empresa e parâmetros de mercado.
 - **Banco de dados** — IndexedDB no navegador (funciona offline) + sincronização com **Supabase gratuito** (Postgres), com exportação/importação de backup JSON.
