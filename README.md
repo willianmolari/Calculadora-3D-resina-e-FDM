@@ -1,4 +1,4 @@
-# Molari 3D — Calculadora & Gestão
+# T&W 3D Maker — Calculadora & Gestão
 
 Calculadora de custos e orçamentos para impressão 3D **FDM** e **resina**, com gestão de vendas, produtos, estoque, serviços, clientes e geração de PDF. Interface inspirada no estilo Apple (claro/escuro), feita em **HTML + CSS + JavaScript puro**.
 
@@ -13,7 +13,19 @@ Calculadora de custos e orçamentos para impressão 3D **FDM** e **resina**, com
 - **Estoque** — entradas, saídas, ajustes e alertas de reposição. Ao marcar um orçamento como **Concluído**, uma venda é criada e o material é baixado do estoque automaticamente.
 - **Orçamentos** — salvar, editar, avançar status (rascunho → enviado → aprovado → concluído) e gerar **PDF** com dados da empresa, do cliente, condições e valor.
 - **Configurações** — *todos* os valores são editáveis: materiais, pintura, energia, máquinas, purga do AMS, margens, taxas, perdas, dados da empresa e parâmetros de mercado.
-- **Banco de dados** — IndexedDB no navegador (funciona offline) + sincronização opcional com **Supabase gratuito** (Postgres), com exportação/importação de backup JSON.
+- **Banco de dados** — IndexedDB no navegador (funciona offline) + sincronização com **Supabase gratuito** (Postgres), com exportação/importação de backup JSON.
+- **Acesso restrito** — login obrigatório para qualquer tela. Somente contas com perfil de **administrador ativo** entram. A tela **Usuários** permite criar, editar, desativar e excluir admins, e cada um pode trocar sua senha em **Configurações → Minha conta**.
+
+## Acesso (somente administradores)
+
+Contas liberadas neste projeto:
+
+| Nome | E-mail | Perfil |
+|---|---|---|
+| Willian Molari | williangabriel681@gmail.com | Administrador |
+| Thais Vieira de Oliveira | taisv132@gmail.com | Administrador |
+
+O login usa Supabase Auth (e-mail + senha) e o RLS do Postgres libera as tabelas somente para administradores autenticados. Não existe modo anônimo: sem sessão válida, o app mostra apenas a tela de login.
 
 ## Rodando localmente
 
@@ -29,10 +41,16 @@ python3 -m http.server 8000
 
 1. Crie um projeto em [supabase.com](https://supabase.com) (plano Free).
 2. No **SQL Editor**, execute o conteúdo de [`supabase/schema.sql`](supabase/schema.sql).
-3. Em **Project Settings → API**, copie a **Project URL** e a **anon public key**.
+3. Em **Project Settings → API**, copie a **Project URL** e a **publishable key** (`sb_publishable_...`). As credenciais de login são entregues separadamente aos administradores.
 4. No app, abra **Configurações → Banco de dados na nuvem**, cole os valores e use **Enviar para a nuvem** / **Baixar da nuvem**. Ative a sincronização automática se quiser.
 
-A chave `anon` é própria para uso no navegador e está protegida pelas policies do RLS. O schema usa uma política aberta para simplificar o uso pessoal — se o app ficar exposto publicamente, troque para `authenticated` e adicione login.
+A chave publicada (`sb_publishable_...`) é própria para uso no navegador. O RLS exige `authenticated` **e** perfil de administrador ativo para ler ou gravar qualquer dado — inclusive o workspace. As funções `admin_*` usam `SECURITY DEFINER` e validam o perfil do chamador antes de agir.
+
+Para criar novos usuários, use a tela **Usuários** do app (somente admins). O schema também aceita criação manual em *Authentication → Users*, seguida de:
+
+```sql
+update public.profiles set role = 'admin', active = true where email = 'email@exemplo.com';
+```
 
 ## Premissas e fontes dos valores padrão
 
@@ -77,6 +95,7 @@ css/styles.css      Design system Apple-like, temas claro/escuro, responsivo
 js/store.js         Estado, IndexedDB, backup JSON e cliente Supabase
 js/calculate.js     Motor de custos e precificação
 js/pdf.js           Geração de orçamento em PDF (jsPDF + fallback de impressão)
+js/auth.js          Login Supabase Auth, perfil admin e gestão de usuários
 js/app.js           Interfaces, navegação, CRUD e eventos
-supabase/schema.sql Tabela e policies do banco gratuito
+supabase/schema.sql Tabelas, RLS, policies e funções admin do banco gratuito
 ```

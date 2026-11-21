@@ -65,7 +65,10 @@
     send: '<path d="M22 2L11 13M22 2l-7 20-4-9-9-4z"/>',
     download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>',
     upload: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/>',
-    empty: '<path d="M3 7l9-4 9 4-9 4z"/><path d="M3 7v10l9 4 9-4V7"/>'
+    empty: '<path d="M3 7l9-4 9 4-9 4z"/><path d="M3 7v10l9 4 9-4V7"/>',
+    shield: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/>',
+    logout: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5M21 12H9"/>',
+    lock: '<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>'
   };
 
   function paintIcons(root) {
@@ -97,6 +100,7 @@
     inventory: ['Estoque', 'Insumos, consumo e reposição.'],
     services: ['Serviços', 'Serviços adicionais do seu negócio.'],
     clients: ['Clientes', 'Cadastro de clientes para orçamentos.'],
+    users: ['Usuários', 'Contas com acesso administrativo ao sistema.'],
     settings: ['Configurações', 'Todos os valores e parâmetros editáveis.']
   };
 
@@ -123,6 +127,7 @@
       case 'inventory': renderInventory(); break;
       case 'services': renderServices(); break;
       case 'clients': renderClients(); break;
+      case 'users': renderUsers(); break;
       case 'settings': renderSettings(); break;
     }
     renderCounters();
@@ -466,6 +471,69 @@
       }).join('') + '</tbody></table>' : emptyState('Cadastre clientes para preencher o PDF automaticamente.');
   }
 
+  /* ---------- Usuários administradores ---------- */
+  let usersCache = [];
+
+  function renderUsers() {
+    const box = $('usersTable');
+    box.innerHTML = '<div class="empty-state">Carregando usuários…</div>';
+    Auth.listUsers().then(function (list) {
+      usersCache = list || [];
+      paintUsersTable();
+    }).catch(function (err) {
+      box.innerHTML = '<div class="login-error">' + esc(err.message) + '</div>';
+    });
+  }
+
+  function paintUsersTable() {
+    const box = $('usersTable');
+    if (!usersCache.length) { box.innerHTML = emptyState('Nenhum usuário cadastrado.'); return; }
+    const me = Auth.user ? Auth.user.id : '';
+    box.innerHTML = '<table><thead><tr><th>Nome</th><th>E-mail</th><th>Perfil</th><th>Situação</th><th>Último acesso</th><th class="num">Ações</th></tr></thead><tbody>' +
+      usersCache.map(function (u) {
+        return '<tr><td><strong>' + esc(u.full_name) + '</strong>' + (u.id === me ? ' <span class="badge blue">você</span>' : '') + '</td>' +
+          '<td>' + esc(u.email) + '</td>' +
+          '<td><span class="badge ' + (u.role === 'admin' ? 'purple' : '') + '">' + (u.role === 'admin' ? 'Administrador' : 'Usuário') + '</span></td>' +
+          '<td><span class="badge ' + (u.active ? 'green' : 'red') + '">' + (u.active ? 'Ativo' : 'Inativo') + '</span></td>' +
+          '<td>' + dateBR(u.last_sign_in_at) + '</td>' +
+          '<td><div class="row-actions">' +
+          '<button class="icon-action" data-action="user-edit" data-id="' + u.id + '" title="Editar"><span data-icon="edit"></span></button>' +
+          '<button class="icon-action" data-action="user-toggle" data-id="' + u.id + '" title="' + (u.active ? 'Desativar' : 'Ativar') + '"><span data-icon="' + (u.active ? 'lock' : 'check') + '"></span></button>' +
+          (u.id === me ? '' : '<button class="icon-action danger" data-action="user-delete" data-id="' + u.id + '" title="Excluir"><span data-icon="trash"></span></button>') +
+          '</div></td></tr>';
+      }).join('') + '</tbody></table>';
+    paintIcons(box);
+  }
+
+  function userForm(existing) {
+    return [
+      { key: 'full_name', label: 'Nome completo', value: existing ? existing.full_name : '', required: true, full: true },
+      { key: 'email', label: 'E-mail de login', type: 'email', value: existing ? existing.email : '', required: true, full: true },
+      { key: 'role', label: 'Perfil', type: 'select', options: [['admin', 'Administrador'], ['user', 'Usuário']], value: existing ? existing.role : 'admin' },
+      { key: 'active', label: 'Situação', type: 'select', options: [['true', 'Ativo'], ['false', 'Inativo']], value: existing ? String(existing.active) : 'true' },
+      { key: 'password', label: existing ? 'Nova senha (deixe vazio para manter)' : 'Senha temporária', type: 'password', value: '', full: true, hint: existing ? 'Mínimo de 8 caracteres.' : 'Mínimo de 8 caracteres. Entregue ao usuário com segurança.' }
+    ];
+  }
+
+  function findUser(id) { return usersCache.find(function (u) { return u.id === id; }); }
+
+  async function saveUser(data, id, old) {
+    if (!old && (!data.password || data.password.length < 8)) throw new Error('Informe uma senha temporária com ao menos 8 caracteres.');
+    if (old) {
+      await Auth.updateUser({
+        p_id: id, p_email: data.email, p_name: data.full_name,
+        p_role: data.role, p_active: data.active === 'true' || data.active === true,
+        p_password: data.password || null
+      });
+    } else {
+      await Auth.createUser({
+        p_email: data.email, p_password: data.password, p_name: data.full_name, p_role: data.role
+      });
+    }
+    toast(old ? 'Usuário atualizado.' : 'Usuário criado.');
+    renderUsers();
+  }
+
   /* ---------- Configurações ---------- */
   const SETTINGS_SECTIONS = [
     {
@@ -543,6 +611,12 @@
       '<div class="settings-grid"><div>' + sectionsHtml + '</div><div>' +
       '<div class="settings-section"><h3>Aparência</h3><p>Tema da interface.</p>' +
       '<div class="setting-row"><label>Tema</label><select data-setting="appearance.theme"><option value="light"' + (st.settings.appearance.theme === 'light' ? ' selected' : '') + '>Claro</option><option value="dark"' + (st.settings.appearance.theme === 'dark' ? ' selected' : '') + '>Escuro</option></select></div></div>' +
+
+      '<div class="settings-section"><h3>Minha conta</h3><p>Perfil administrativo e alteração de senha.</p>' +
+      '<div class="setting-row wide"><label>Usuário logado</label><input type="text" value="' + esc((Auth.profile && Auth.profile.full_name) || '') + ' · ' + esc((Auth.profile && Auth.profile.email) || '') + '" readonly></div>' +
+      '<div class="setting-row wide"><label>Nova senha</label><input type="password" id="newPassword" placeholder="Mínimo de 8 caracteres"></div>' +
+      '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px"><button class="btn secondary small" data-action="change-password"><span data-icon="lock"></span> Alterar senha</button><button class="btn secondary small" data-action="logout"><span data-icon="logout"></span> Sair da conta</button></div>' +
+      '<div class="info-box">Depois de alterar, use a nova senha no próximo acesso. Os dois administradores têm os mesmos privilégios.</div></div>' +
 
       '<div class="settings-section"><h3>Banco de dados na nuvem</h3><p>Supabase gratuito: seus dados ficam acessíveis em qualquer dispositivo.</p>' +
       '<div class="setting-row wide"><label>URL do projeto (https://xxx.supabase.co)</label><input type="text" value="' + esc(cloud.url) + '" data-setting="cloud.url" placeholder="https://....supabase.co"></div>' +
@@ -852,6 +926,53 @@
 
         case 'sale-new': openModal('Nova venda', 'Registro manual de receita e custo.', saleForm(), function (d) { saveSale(d); }); break;
 
+        case 'user-new':
+          openModal('Novo usuário', 'Acesso administrativo ao sistema.', userForm(), function (d) {
+            saveUser(d, null, null).catch(function (e) { toast(e.message, true); });
+          }, 'Criar usuário');
+          break;
+        case 'user-edit': {
+          const u = findUser(id);
+          if (!u) return;
+          openModal('Editar usuário', u.email, userForm(u), function (d) {
+            saveUser(d, id, u).catch(function (e) { toast(e.message, true); });
+          });
+          break;
+        }
+        case 'user-toggle': {
+          const u = findUser(id);
+          if (!u) return;
+          await Auth.updateUser({
+            p_id: id, p_email: u.email, p_name: u.full_name, p_role: u.role,
+            p_active: !u.active, p_password: null
+          });
+          toast(u.active ? 'Usuário desativado.' : 'Usuário ativado.');
+          renderUsers();
+          break;
+        }
+        case 'user-delete': {
+          const u = findUser(id);
+          if (!u) return;
+          if (confirm('Excluir o usuário ' + u.full_name + '? Esta ação não pode ser desfeita.')) {
+            await Auth.deleteUser(id);
+            toast('Usuário excluído.');
+            renderUsers();
+          }
+          break;
+        }
+        case 'change-password': {
+          const pass = $('newPassword').value;
+          if (!pass || pass.length < 8) { toast('A senha deve ter ao menos 8 caracteres.', true); break; }
+          await Auth.changePassword(pass);
+          $('newPassword').value = '';
+          toast('Senha alterada com sucesso.');
+          break;
+        }
+        case 'logout':
+          await Auth.signOut();
+          showLogin();
+          break;
+
         case 'cloud-push':
           await Store.pushCloud(); toast('Dados enviados para a nuvem.'); renderCounters(); break;
         case 'cloud-pull': {
@@ -970,14 +1091,82 @@
     paintIcons();
   }
 
-  /* ---------- Init ---------- */
-  async function init() {
-    await Store.init();
-    Store.onChange(function () { renderView(); });
+  /* ---------- Login / Init ---------- */
+  function showLoginError(msg) {
+    const box = $('loginError');
+    box.textContent = msg || '';
+    box.classList.toggle('hidden', !msg);
+  }
+
+  let appStarted = false;
+  let booted = false;
+
+  function showLogin(msg) {
+    appStarted = false;
+    $('loginScreen').classList.remove('hidden');
+    document.querySelector('.app-shell').classList.add('hidden');
+    showLoginError(msg);
+    paintIcons($('loginScreen'));
+    setTimeout(function () { $('loginEmail').focus(); }, 60);
+  }
+
+  function showApp() {
+    appStarted = true;
+    $('loginScreen').classList.add('hidden');
+    document.querySelector('.app-shell').classList.remove('hidden');
+    showLoginError('');
+    const p = Auth.profile || {};
+    $('userName').textContent = p.full_name || '—';
+    $('userRole').textContent = p.role === 'admin' ? 'Administrador' : 'Usuário';
+    $('userAvatar').textContent = ((p.full_name || '?').trim().charAt(0) || '?').toUpperCase();
+    const first = (p.full_name || '').trim().split(/\s+/)[0];
+    $('heroGreeting').textContent = first ? 'Bom trabalho, ' + first + '!' : 'Bom trabalho!';
     applyTheme();
     paintIcons();
     renderView();
     go('dashboard');
+  }
+
+  $('loginForm').addEventListener('submit', async function (ev) {
+    ev.preventDefault();
+    const btn = $('loginSubmit');
+    btn.disabled = true;
+    btn.textContent = 'Entrando…';
+    showLoginError('');
+    try {
+      await Auth.signIn($('loginEmail').value, $('loginPassword').value);
+      $('loginPassword').value = '';
+      showApp();
+    } catch (err) {
+      console.error(err);
+      showLoginError(err.message || 'Não foi possível entrar.');
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = '<span data-icon="shield"></span> Entrar';
+      btn.dataset.painted = '';
+      paintIcons(btn);
+    }
+  });
+
+  $('logoutBtn').addEventListener('click', async function () {
+    await Auth.signOut();
+    showLogin();
+  });
+
+  Auth.onChange(function (a) {
+    const shellVisible = !document.querySelector('.app-shell').classList.contains('hidden');
+    if (!a.ready) { if (shellVisible) showLogin(); return; }
+    if (booted && !appStarted && !$('loginScreen').classList.contains('hidden')) showApp();
+  });
+
+  async function init() {
+    await Store.init();
+    try { await Auth.init(); }
+    catch (e) { console.error(e); }
+    if (!Auth.ready) { showLogin(); return; }
+    Store.onChange(function () { renderView(); });
+    booted = true;
+    showApp();
   }
   init();
 })();

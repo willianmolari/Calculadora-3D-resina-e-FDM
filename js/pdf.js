@@ -28,7 +28,7 @@
     doc.setTextColor(255, 255, 255);
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(20);
-    doc.text(c.name || 'Molari 3D', M, 20);
+    doc.text(c.name || 'T&W 3D Maker', M, 20);
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(9);
     doc.text(c.tagline || 'Impressão 3D sob medida', M, 27);

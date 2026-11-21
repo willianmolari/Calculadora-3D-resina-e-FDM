@@ -18,7 +18,7 @@
       workspaceId: uid('ws'),
       settings: {
         company: {
-          name: 'Molari 3D',
+          name: 'T&W 3D Maker',
           tagline: 'Impressão 3D sob medida',
           owner: 'Willian Molari',
           document: '',
@@ -153,10 +153,11 @@
   /* ---------- Supabase ---------- */
   const TABLE = 'workspace';
 
-  function cloudHeaders(s, extra) {
+  async function cloudHeaders(s, extra) {
+    const token = window.Auth ? await Auth.getToken() : '';
     return Object.assign({
       'apikey': s.anonKey,
-      'Authorization': 'Bearer ' + s.anonKey,
+      'Authorization': 'Bearer ' + (token || s.anonKey),
       'Content-Type': 'application/json'
     }, extra || {});
   }
@@ -170,7 +171,7 @@
     const payload = [{ id: state.workspaceId, data: state, updated_at: c.lastSync }];
     const res = await fetch(url, {
       method: 'POST',
-      headers: cloudHeaders(c, { 'Prefer': 'resolution=merge-duplicates,return=minimal' }),
+      headers: await cloudHeaders(c, { 'Prefer': 'resolution=merge-duplicates,return=minimal' }),
       body: JSON.stringify(payload)
     });
     if (!res.ok) {
@@ -183,7 +184,7 @@
     const c = state.settings.cloud;
     if (!c.url || !c.anonKey) throw new Error('Configure a URL e a chave do Supabase em Configurações.');
     const url = c.url.replace(/\/$/, '') + '/rest/v1/' + TABLE + '?id=eq.' + encodeURIComponent(state.workspaceId) + '&select=data,updated_at';
-    const res = await fetch(url, { method: 'GET', headers: cloudHeaders(c) });
+    const res = await fetch(url, { method: 'GET', headers: await cloudHeaders(c) });
     if (!res.ok) throw new Error('Falha ao buscar (HTTP ' + res.status + '): ' + (await res.text()).slice(0, 180));
     const rows = await res.json();
     c.lastSync = new Date().toISOString();
@@ -205,6 +206,8 @@
       if (saved && saved.settings) {
         state = deepMerge(defaults(), saved);
       }
+      // migração: nome antigo da empresa
+      if (state.settings.company.name === 'Molari 3D') state.settings.company.name = 'T&W 3D Maker';
       await writeLocal(state);
       return state;
     },

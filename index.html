@@ -4,24 +4,26 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="description" content="Calculadora de custos e orçamentos para impressão 3D FDM e resina, com gestão de vendas, estoque e clientes.">
-  <title>Molari 3D · Calculadora & Gestão</title>
+  <title>T&W 3D Maker · Calculadora & Gestão</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/styles.css">
   <script defer src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <script defer src="js/store.js"></script>
   <script defer src="js/calculate.js"></script>
   <script defer src="js/pdf.js"></script>
+  <script defer src="js/auth.js"></script>
   <script defer src="js/app.js"></script>
 </head>
 <body>
   <div class="app-shell">
     <aside class="sidebar" id="sidebar">
       <div class="brand">
-        <div class="brand-mark">M<span>3</span>D</div>
+        <div class="brand-mark">T<span>&W</span></div>
         <div class="brand-text">
-          <strong>Molari 3D</strong>
+          <strong>T&W 3D Maker</strong>
           <span>Calculadora & Gestão</span>
         </div>
       </div>
@@ -58,6 +60,9 @@
         </button>
 
         <p class="nav-label nav-label-spaced">SISTEMA</p>
+        <button class="nav-item" data-view="users">
+          <span class="nav-icon" data-icon="shield"></span><span>Usuários</span>
+        </button>
         <button class="nav-item" data-view="settings">
           <span class="nav-icon" data-icon="gear"></span><span>Configurações</span>
         </button>
@@ -65,7 +70,12 @@
 
       <div class="sidebar-footer">
         <div class="sync-pill" id="syncPill"><span class="dot"></span><span id="syncText">Salvo localmente</span></div>
-        <small>v1.0 · Curitiba/PR</small>
+        <div class="user-chip" id="userChip">
+          <span class="user-avatar" id="userAvatar">T</span>
+          <span class="user-meta"><strong id="userName">—</strong><small id="userRole">Administrador</small></span>
+          <button class="icon-btn" id="logoutBtn" title="Sair"><span data-icon="logout"></span></button>
+        </div>
+        <small>v1.1 · Curitiba/PR</small>
       </div>
     </aside>
 
@@ -90,7 +100,7 @@
           <div class="hero-banner">
             <div>
               <span class="eyebrow">PAINEL DE CONTROLE</span>
-              <h2>Bom trabalho, Willian.</h2>
+              <h2 id="heroGreeting">Bom trabalho!</h2>
               <p>Acompanhe faturamento, custos e margem em tempo real.</p>
             </div>
             <div class="hero-orb" aria-hidden="true"></div>
@@ -302,11 +312,50 @@
           </div>
         </section>
 
+        <!-- USERS -->
+        <section class="view hidden" data-view="users">
+          <div class="card">
+            <div class="card-header">
+              <div><h3>Usuários administradores</h3><p>Apenas usuários autenticados e ativos acessam o sistema.</p></div>
+              <button class="btn secondary small" id="addUserBtn" data-action="user-new"><span data-icon="plus"></span> Novo usuário</button>
+            </div>
+            <div class="info-box" style="margin-bottom:16px">
+              <strong>Acesso restrito:</strong> todos os acesso ao app exige login e perfil de administrador ativo. Ao criar um usuário, informe uma senha temporária e peça para trocá-la no primeiro acesso, em Configurações → Minha conta.
+            </div>
+            <div class="table-wrap" id="usersTable"></div>
+          </div>
+        </section>
+
         <!-- SETTINGS -->
         <section class="view hidden" data-view="settings">
           <div id="settingsContent"></div>
         </section>
       </main>
+    </div>
+  </div>
+
+  <!-- LOGIN (bloqueia todo o app até autenticar como admin) -->
+  <div id="loginScreen" class="login-screen hidden">
+    <div class="login-bg" aria-hidden="true"><span></span><span></span><span></span></div>
+    <div class="login-card">
+      <div class="login-brand">
+        <div class="brand-mark">T<span>&W</span></div>
+        <h1>T&W 3D Maker</h1>
+        <p>Calculadora & Gestão · Acesso restrito</p>
+      </div>
+      <form id="loginForm" class="login-form">
+        <div class="field">
+          <label for="loginEmail">E-mail</label>
+          <input id="loginEmail" type="email" autocomplete="username" required placeholder="seu@email.com">
+        </div>
+        <div class="field">
+          <label for="loginPassword">Senha</label>
+          <input id="loginPassword" type="password" autocomplete="current-password" required placeholder="••••••••">
+        </div>
+        <div class="login-error hidden" id="loginError"></div>
+        <button type="submit" class="btn primary login-submit" id="loginSubmit"><span data-icon="shield"></span> Entrar</button>
+      </form>
+      <div class="login-foot"><span data-icon="lock"></span> Somente administradores cadastrados podem acessar.</div>
     </div>
   </div>
 
