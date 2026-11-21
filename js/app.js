@@ -40,14 +40,17 @@
   const currentSellerId = function () { return (window.Auth && Auth.userId) || ''; };
   const currentSellerName = function () { return (window.Auth && Auth.userName) || 'Vendedor'; };
 
+  function valueOf(item) { return item && item.result ? numOr(item.result.price) : numOr(item && item.value); }
+  function costOf(item) { return item && item.result ? numOr(item.result.totalCost) : numOr(item && item.cost); }
+  function grossProfitOf(item) { return valueOf(item) - costOf(item); }
+
   function commissionOf(item) {
-    const st = S();
-    const cfg = st.settings.commission || {};
+    const cfg = S().settings.commission || {};
     const share = numOr(cfg.sellerShare, 50) / 100;
-    const value = item && item.result ? numOr(item.result.price) : numOr(item && item.value);
-    const cost = item && item.result ? numOr(item.result.totalCost) : numOr(item && item.cost);
-    return Math.max(0, (value - cost) * share);
+    return Math.max(0, grossProfitOf(item) * share);
   }
+
+  function companyProfitOf(item) { return grossProfitOf(item) - commissionOf(item); }
 
   function visibleSales() {
     const all = S().sales || [];
@@ -200,16 +203,16 @@
     }
     const revenue = sales.reduce(function (a, s) { return a + numOr(s.value); }, 0);
     const cost = sales.reduce(function (a, s) { return a + numOr(s.cost); }, 0);
-    const profit = revenue - cost;
-    const margin = revenue ? (profit / revenue) * 100 : 0;
     const commission = sales.reduce(function (a, s) { return a + commissionOf(s); }, 0);
+    const profit = revenue - cost - commission;
+    const margin = revenue ? (profit / revenue) * 100 : 0;
     const pending = visibleQuotes().filter(function (q) { return q.status === 'sent' || q.status === 'draft'; });
     const pendingValue = pending.reduce(function (a, q) { return a + numOr(q.result && q.result.price); }, 0);
     const lowStock = st.stock.filter(function (i) { return numOr(i.qty, 0) <= numOr(i.min, 0); });
 
     const kpis = [
       { label: isAdmin() ? 'Faturamento total' : 'Seu faturamento', value: money(revenue), icon: 'wallet', foot: sales.length + ' venda(s) registrada(s)', cls: '' },
-      { label: 'Lucro acumulado', value: money(profit), icon: 'trend', foot: 'Custos de ' + money(cost), cls: 'green' },
+      { label: 'Lucro da empresa', value: money(profit), icon: 'trend', foot: 'Após comissão de ' + money(commission), cls: 'green' },
       { label: 'Comissão', value: money(commission), icon: 'chart', foot: (numOr(st.settings.commission.sellerShare, 50)) + '% do lucro', cls: 'purple' },
       { label: 'Em aberto', value: money(pendingValue), icon: 'doc', foot: pending.length + ' orçamento(s) pendente(s)', cls: 'orange' }
     ];
@@ -230,14 +233,14 @@
       return {
         label: mo.label,
         revenue: list.reduce(function (a, s) { return a + numOr(s.value); }, 0),
-        profit: list.reduce(function (a, s) { return a + numOr(s.value) - numOr(s.cost); }, 0)
+        profit: list.reduce(function (a, s) { return a + companyProfitOf(s); }, 0)
       };
     });
     const max = Math.max(1, ...data.map(function (d) { return d.revenue; }));
     $('chart').innerHTML = data.map(function (d) {
       return '<div class="chart-group"><div class="chart-bars">' +
         '<div class="chart-bar revenue" style="height:' + Math.max(3, (d.revenue / max) * 130) + 'px" title="Receita ' + money(d.revenue) + '"></div>' +
-        '<div class="chart-bar profit" style="height:' + Math.max(3, (d.profit / max) * 130) + 'px" title="Lucro ' + money(d.profit) + '"></div>' +
+        '<div class="chart-bar profit" style="height:' + Math.max(3, (d.profit / max) * 130) + 'px" title="Lucro da empresa ' + money(d.profit) + '"></div>' +
         '</div><span class="chart-label">' + d.label + '</span></div>';
     }).join('');
 
@@ -265,9 +268,9 @@
     if (!sales.length) {
       $('recentSales').innerHTML = emptyState('Nenhuma venda registrada ainda.');
     } else {
-      $('recentSales').innerHTML = '<table><thead><tr><th>Produto</th><th>Data</th><th class="num">Valor</th><th class="num">Lucro</th></tr></thead><tbody>' +
+      $('recentSales').innerHTML = '<table><thead><tr><th>Produto</th><th>Data</th><th class="num">Valor</th><th class="num">Lucro empresa</th></tr></thead><tbody>' +
         sales.slice(0, 5).map(function (s) {
-          const l = numOr(s.value) - numOr(s.cost);
+          const l = companyProfitOf(s);
           return '<tr><td><strong>' + esc(s.product) + '</strong><span class="sub">' + esc(s.client || '—') + (isAdmin() ? ' · ' + esc(sellerNameOf(s)) : '') + '</span></td><td>' + dateBR(s.date) + '</td><td class="num">' + money(s.value) + '</td><td class="num ' + (l >= 0 ? 'positive' : 'negative') + '">' + money(l) + '</td></tr>';
         }).join('') + '</tbody></table>';
     }
@@ -280,7 +283,7 @@
     sales.forEach(function (s) {
       const k = s.product || 'Outros';
       if (!groups[k]) groups[k] = { name: k, profit: 0, qty: 0 };
-      groups[k].profit += numOr(s.value) - numOr(s.cost);
+      groups[k].profit += companyProfitOf(s);
       groups[k].qty += numOr(s.qty, 1);
     });
     const top = Object.values(groups).sort(function (a, b) { return b.profit - a.profit; }).slice(0, 5);
@@ -302,17 +305,16 @@
     const groups = {};
     sales.forEach(function (s) {
       const k = sellerIdOf(s);
-      if (!groups[k]) groups[k] = { id: k, name: sellerNameOf(s), revenue: 0, cost: 0, count: 0 };
+      if (!groups[k]) groups[k] = { id: k, name: sellerNameOf(s), revenue: 0, gross: 0, commission: 0, count: 0 };
       groups[k].revenue += numOr(s.value);
-      groups[k].cost += numOr(s.cost);
+      groups[k].gross += grossProfitOf(s);
+      groups[k].commission += commissionOf(s);
       groups[k].count += 1;
     });
     const rows = Object.values(groups).sort(function (a, b) { return b.revenue - a.revenue; });
-    el.innerHTML = rows.length ? '<table><thead><tr><th>' + (isAdmin() ? 'Vendedor' : 'Resumo') + '</th><th class="num">Vendas</th><th class="num">Faturamento</th><th class="num">Comissão</th></tr></thead><tbody>' +
+    el.innerHTML = rows.length ? '<table><thead><tr><th>' + (isAdmin() ? 'Vendedor' : 'Resumo') + '</th><th class="num">Vendas</th><th class="num">Faturamento</th>' + (isAdmin() ? '<th class="num">Lucro empresa</th>' : '') + '<th class="num">Comissão</th></tr></thead><tbody>' +
       rows.map(function (r) {
-        const profit = r.revenue - r.cost;
-        const commission = profit * numOr(S().settings.commission.sellerShare, 50) / 100;
-        return '<tr><td><strong>' + esc(r.name) + '</strong></td><td class="num">' + r.count + '</td><td class="num"><strong>' + money(r.revenue) + '</strong></td><td class="num">' + money(commission) + '</td></tr>';
+        return '<tr><td><strong>' + esc(r.name) + '</strong></td><td class="num">' + r.count + '</td><td class="num"><strong>' + money(r.revenue) + '</strong></td>' + (isAdmin() ? '<td class="num">' + money(r.gross - r.commission) + '</td>' : '') + '<td class="num">' + money(r.commission) + '</td></tr>';
       }).join('') + '</tbody></table>' : emptyState('Nenhum dado por vendedor.');
   }
 
@@ -383,18 +385,24 @@
     const statusText = r.status === 'danger' ? 'Abaixo do mínimo' : r.status === 'warning' ? 'Entre mínimo e ideal' : 'Meta atingida';
     const statusColor = r.status === 'danger' ? 'red' : r.status === 'warning' ? 'orange' : 'green';
 
+    const netProfit = companyProfitOf({ value: r.price, cost: r.totalCost });
+    const idealNet = companyProfitOf({ value: r.idealPrice, cost: r.totalCost });
+    const minNet = companyProfitOf({ value: r.minPrice, cost: r.totalCost });
+    const commissionEstimate = commissionOf({ value: r.price, cost: r.totalCost });
+
     $('results').innerHTML =
       '<div class="result-hero"><div class="rh-label">PREÇO ' + (r.input.price ? 'INFORMADO' : 'SUGERIDO · ' + r.targetIdeal + '% DE LUCRO') + '</div>' +
       '<div class="rh-price">' + money(r.price) + '</div>' +
       '<div class="rh-sub">' + r.qty + 'x ' + esc(r.material) + ' · ' + Calc.r2(r.hours) + ' h · custo ' + money(r.totalCost) + '</div></div>' +
 
       '<div class="result-prices">' +
-      '<div class="price-box ideal"><div class="pb-label"><span data-icon="sparkle"></span> Preço ideal (' + r.targetIdeal + '%)</div><div class="pb-value">' + money(r.idealPrice) + '</div><div class="pb-foot">Lucro de ' + money(r.idealPrice - r.totalCost) + '</div></div>' +
-      '<div class="price-box"><div class="pb-label"><span data-icon="info"></span> Preço mínimo (' + r.targetMin + '%)</div><div class="pb-value">' + money(r.minPrice) + '</div><div class="pb-foot">Lucro de ' + money(r.minPrice - r.totalCost) + '</div></div>' +
+      '<div class="price-box ideal"><div class="pb-label"><span data-icon="sparkle"></span> Preço ideal (' + r.targetIdeal + '%)</div><div class="pb-value">' + money(r.idealPrice) + '</div><div class="pb-foot">Lucro empresa: ' + money(idealNet) + '</div></div>' +
+      '<div class="price-box"><div class="pb-label"><span data-icon="info"></span> Preço mínimo (' + r.targetMin + '%)</div><div class="pb-value">' + money(r.minPrice) + '</div><div class="pb-foot">Lucro empresa: ' + money(minNet) + '</div></div>' +
       '</div>' +
 
       '<div class="card" style="margin:0"><div class="card-header"><div><h3>Margem sobre a venda</h3><p>Lucro ÷ preço de venda</p></div><span class="badge ' + statusColor + '">' + Calc.r2(r.margin) + '% · ' + statusText + '</span></div>' +
-      '<div style="display:flex;justify-content:space-between;font-size:12px"><span>Custo: <strong>' + money(r.totalCost) + '</strong></span><span>Lucro: <strong class="' + (r.profit >= 0 ? 'positive' : 'negative') + '">' + money(r.profit) + '</strong></span></div>' +
+      '<div style="display:flex;justify-content:space-between;font-size:12px"><span>Custo: <strong>' + money(r.totalCost) + '</strong></span><span>Lucro empresa: <strong class="' + (netProfit >= 0 ? 'positive' : 'negative') + '">' + money(netProfit) + '</strong></span></div>' +
+      '<div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text-tertiary);margin-top:4px"><span>Comissão estimada: <strong>' + money(commissionEstimate) + '</strong></span><span>Repasse ao vendedor</span></div>' +
       '<div class="margin-bar"><i style="width:' + Math.min(100, Math.max(0, r.margin)) + '%"></i></div>' +
       '<div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text-tertiary);margin-top:5px"><span>0%</span><span>Mín. ' + r.targetMin + '%</span><span>Ideal ' + r.targetIdeal + '%</span><span>100%</span></div>' +
       (r.margin < r.targetMin ? '<div class="info-box" style="background:var(--red-soft)">Este preço dá menos que a margem mínima de ' + r.targetMin + '%. Recomenda-se cobrar ao menos <strong>' + money(r.minPrice) + '</strong>.</div>' : '') +
@@ -470,7 +478,7 @@
       .filter(function (q) { return filter === 'all' || q.status === filter; });
     if (!list.length) { $('quotesTable').innerHTML = emptyState('Nenhum orçamento encontrado. Use a calculadora para criar um.'); return; }
     const statusMap = { draft: ['Rascunho', ''], sent: ['Enviado', 'blue'], approved: ['Aprovado', 'green'], done: ['Concluído', 'purple'] };
-    $('quotesTable').innerHTML = '<table><thead><tr><th>Número</th><th>Peça / cliente</th><th>Data</th><th class="num">Custo</th><th class="num">Valor</th><th class="num">Margem</th><th class="num">Sua comissão</th><th>Status</th><th class="num">Ações</th></tr></thead><tbody>' +
+    $('quotesTable').innerHTML = '<table><thead><tr><th>Número</th><th>Peça / cliente</th><th>Data</th><th class="num">Custo</th><th class="num">Valor</th><th class="num">Margem</th>' + (isAdmin() ? '<th class="num">Lucro empresa</th>' : '') + '<th class="num">Sua comissão</th><th>Status</th><th class="num">Ações</th></tr></thead><tbody>' +
       list.map(function (q) {
         const r = q.result || {};
         const stt = statusMap[q.status] || statusMap.draft;
@@ -480,6 +488,7 @@
           '<td><strong>' + esc(q.title) + '</strong><span class="sub">' + esc(q.clientName || 'Consumidor final') + '</span></td>' +
           '<td>' + dateBR(q.createdAt) + '</td><td class="num">' + money(r.totalCost) + '</td><td class="num"><strong>' + money(r.price) + '</strong></td>' +
           '<td class="num ' + (r.margin >= st.settings.margins.minimum ? 'positive' : 'negative') + '">' + Calc.r2(r.margin || 0) + '%</td>' +
+          (isAdmin() ? '<td class="num">' + money(companyProfitOf(q)) + '</td>' : '') +
           '<td class="num positive">' + money(commissionOf(q)) + '</td>' +
           '<td><span class="badge ' + stt[1] + '">' + stt[0] + '</span></td>' +
           '<td><div class="row-actions">' +
@@ -504,27 +513,37 @@
     }
     const revenue = sales.reduce(function (a, s) { return a + numOr(s.value); }, 0);
     const cost = sales.reduce(function (a, s) { return a + numOr(s.cost); }, 0);
-    const profit = revenue - cost;
-    const margin = revenue ? profit / revenue * 100 : 0;
     const commission = sales.reduce(function (a, s) { return a + commissionOf(s); }, 0);
+    const profit = revenue - cost - commission;
+    const margin = revenue ? profit / revenue * 100 : 0;
+    const commissionRate = revenue ? commission / revenue * 100 : 0;
     $('salesKpis').innerHTML = [
       { label: isAdmin() ? 'Receita' : 'Seu faturamento', value: money(revenue), icon: 'wallet', foot: sales.length + ' vendas' },
       { label: 'Custo total', value: money(cost), icon: 'box', foot: 'Insumos, energia e mão de obra' },
-      { label: isAdmin() ? 'Lucro' : 'Sua comissão', value: money(isAdmin() ? profit : commission), icon: 'trend', foot: isAdmin() ? 'Resultado acumulado' : numOr(st.settings.commission.sellerShare, 50) + '% do lucro' },
-      { label: 'Margem', value: Calc.r2(margin) + '%', icon: 'chart', foot: 'Lucro sobre venda' }
+      { label: isAdmin() ? 'Lucro da empresa' : 'Sua comissão', value: money(isAdmin() ? profit : commission), icon: 'trend', foot: isAdmin() ? 'Após comissão de ' + money(commission) : numOr(st.settings.commission.sellerShare, 50) + '% do lucro' },
+      { label: isAdmin() ? 'Margem líquida' : 'Comissão sobre venda', value: Calc.r2(isAdmin() ? margin : commissionRate) + '%', icon: 'chart', foot: isAdmin() ? 'Lucro da empresa sobre a venda' : 'Percentual do faturamento' }
     ].map(function (k) {
       return '<div class="kpi"><div class="kpi-top"><span class="kpi-label">' + k.label + '</span><span class="kpi-icon"><span data-icon="' + k.icon + '"></span></span></div><div class="kpi-value">' + k.value + '</div><div class="kpi-foot">' + esc(k.foot) + '</div></div>';
     }).join('');
 
-    $('salesTable').innerHTML = sales.length ? '<table><thead><tr><th>Produto</th><th>Cliente</th><th>Data</th><th class="num">Qtd</th><th class="num">Custo</th><th class="num">Venda</th><th class="num">Lucro</th><th class="num">Margem</th><th class="num">Comissão</th><th>' + (isAdmin() ? 'Vendedor' : 'Status') + '</th><th></th></tr></thead><tbody>' +
+    const admin = isAdmin();
+    const head = '<tr><th>Produto</th><th>Cliente</th><th>Data</th><th class="num">Qtd</th><th class="num">Custo</th><th class="num">Venda</th>' +
+      (admin ? '<th class="num">Lucro empresa</th><th class="num">Margem</th><th class="num">Comissão</th><th>Vendedor</th>' : '<th class="num">Sua comissão</th><th>Status</th>') +
+      '<th></th></tr>';
+    $('salesTable').innerHTML = sales.length ? '<table><thead>' + head + '</thead><tbody>' +
       sales.map(function (s) {
-        const l = numOr(s.value) - numOr(s.cost);
-        const m = numOr(s.value) ? l / numOr(s.value) * 100 : 0;
+        const net = companyProfitOf(s);
+        const comm = commissionOf(s);
+        const m = numOr(s.value) ? net / numOr(s.value) * 100 : 0;
         const pending = (st.deleteRequests || []).some(function (r) { return r.saleId === s.id && r.status === 'pending'; });
-        const statusCell = isAdmin() ? esc(sellerNameOf(s)) : (pending ? '<span class="badge orange">Exclusão solicitada</span>' : '<span class="badge green">Ativa</span>');
-        return '<tr><td><strong>' + esc(s.product) + '</strong></td><td>' + esc(s.client || '—') + '</td><td>' + dateBR(s.date) + '</td><td class="num">' + numOr(s.qty, 1) + '</td><td class="num">' + money(s.cost) + '</td><td class="num"><strong>' + money(s.value) + '</strong></td><td class="num ' + (l >= 0 ? 'positive' : 'negative') + '">' + money(l) + '</td><td class="num">' + Calc.r2(m) + '%</td><td class="num positive">' + money(commissionOf(s)) + '</td><td>' + statusCell + '</td><td><div class="row-actions">' + (pending
+        const statusCell = pending ? '<span class="badge orange">Exclusão solicitada</span>' : '<span class="badge green">Ativa</span>';
+        const sellerCell = '<td><strong>' + esc(s.product) + '</strong></td><td>' + esc(s.client || '—') + '</td><td>' + dateBR(s.date) + '</td><td class="num">' + numOr(s.qty, 1) + '</td><td class="num">' + money(s.cost) + '</td><td class="num"><strong>' + money(s.value) + '</strong></td>';
+        const valueCells = admin
+          ? '<td class="num ' + (net >= 0 ? 'positive' : 'negative') + '">' + money(net) + '</td><td class="num">' + Calc.r2(m) + '%</td><td class="num positive">' + money(comm) + '</td><td>' + esc(sellerNameOf(s)) + '</td>'
+          : '<td class="num positive">' + money(comm) + '</td><td>' + statusCell + '</td>';
+        return '<tr>' + sellerCell + valueCells + '<td><div class="row-actions">' + (pending
           ? '<span class="badge orange">Aguardando admin</span>'
-          : '<button class="icon-action danger" data-action="' + (isAdmin() ? 'sale-delete' : 'sale-request-delete') + '" data-id="' + s.id + '" title="' + (isAdmin() ? 'Excluir' : 'Solicitar exclusão') + '"><span data-icon="trash"></span></button>') + '</div></td></tr>';
+          : '<button class="icon-action danger" data-action="' + (admin ? 'sale-delete' : 'sale-request-delete') + '" data-id="' + s.id + '" title="' + (admin ? 'Excluir' : 'Solicitar exclusão') + '"><span data-icon="trash"></span></button>') + '</div></td></tr>';
       }).join('') + '</tbody></table>' : emptyState('Nenhuma venda registrada. Conclua um orçamento ou adicione uma venda.');
   }
 
@@ -551,9 +570,9 @@
     const el = $('quoteCommissionPreview');
     if (!el) return;
     const quotes = visibleQuotes().slice().sort(function (a, b) { return new Date(b.createdAt) - new Date(a.createdAt); }).slice(0, 5);
-    el.innerHTML = quotes.length ? '<table><thead><tr><th>Orçamento</th><th class="num">Valor</th><th class="num">Comissão</th></tr></thead><tbody>' +
+    el.innerHTML = quotes.length ? '<table><thead><tr><th>Orçamento</th><th class="num">Valor</th>' + (isAdmin() ? '<th class="num">Lucro empresa</th>' : '') + '<th class="num">Comissão</th></tr></thead><tbody>' +
       quotes.map(function (q) {
-        return '<tr><td><strong>' + esc(q.number) + '</strong><span class="sub">' + esc(sellerNameOf(q)) + '</span></td><td class="num">' + money(numOr(q.result && q.result.price)) + '</td><td class="num positive">' + money(commissionOf(q)) + '</td></tr>';
+        return '<tr><td><strong>' + esc(q.number) + '</strong><span class="sub">' + esc(sellerNameOf(q)) + '</span></td><td class="num">' + money(valueOf(q)) + '</td>' + (isAdmin() ? '<td class="num">' + money(companyProfitOf(q)) + '</td>' : '') + '<td class="num positive">' + money(commissionOf(q)) + '</td></tr>';
       }).join('') + '</tbody></table>' : emptyState('Nenhum orçamento para prévia.');
   }
 
