@@ -790,7 +790,7 @@
 
     const cloud = st.settings.cloud;
     $('settingsContent').innerHTML =
-      '<div class="settings-grid"><div>' + sectionsHtml + '</div><div>' +
+      '<div class="settings-grid"><div class="admin-settings">' + sectionsHtml + '</div><div>' +
       '<div class="settings-section"><h3>Aparência</h3><p>Tema da interface.</p>' +
       '<div class="setting-row"><label>Tema</label><select data-setting="appearance.theme"><option value="light"' + (st.settings.appearance.theme === 'light' ? ' selected' : '') + '>Claro</option><option value="dark"' + (st.settings.appearance.theme === 'dark' ? ' selected' : '') + '>Escuro</option></select></div></div>' +
 
@@ -800,7 +800,7 @@
       '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px"><button class="btn secondary small" data-action="change-password"><span data-icon="lock"></span> Alterar senha</button><button class="btn secondary small" data-action="logout"><span data-icon="logout"></span> Sair da conta</button></div>' +
       '<div class="info-box">Depois de alterar, use a nova senha no próximo acesso. Os dois administradores têm os mesmos privilégios.</div></div>' +
 
-      '<div class="settings-section"><h3>Banco de dados na nuvem</h3><p>Supabase gratuito: seus dados ficam acessíveis em qualquer dispositivo.</p>' +
+      '<div class="settings-section admin-settings"><h3>Banco de dados na nuvem</h3><p>Supabase gratuito: seus dados ficam acessíveis em qualquer dispositivo.</p>' +
       '<div class="setting-row wide"><label>URL do projeto (https://xxx.supabase.co)</label><input type="text" value="' + esc(cloud.url) + '" data-setting="cloud.url" placeholder="https://....supabase.co"></div>' +
       '<div class="setting-row wide"><label>Chave pública (anon key)</label><input type="text" value="' + esc(cloud.anonKey) + '" data-setting="cloud.anonKey" placeholder="eyJ..."></div>' +
       '<div class="setting-row"><label>Sincronização automática</label><select data-setting="cloud.autoSync"><option value="false"' + (!cloud.autoSync ? ' selected' : '') + '>Desligada</option><option value="true"' + (cloud.autoSync ? ' selected' : '') + '>Ligada</option></select></div>' +
@@ -810,14 +810,14 @@
       (cloud.lastSync ? '<div class="info-box">Última sincronização: ' + new Date(cloud.lastSync).toLocaleString('pt-BR') + '</div>' : '') +
       '</div>' +
 
-      '<div class="settings-section"><h3>Backup & dados</h3><p>Exporte ou restaure todo o seu banco de dados.</p>' +
+      '<div class="settings-section admin-settings"><h3>Backup & dados</h3><p>Exporte ou restaure todo o seu banco de dados.</p>' +
       '<div style="display:flex;flex-wrap:wrap;gap:8px"><button class="btn secondary small" data-action="export-json"><span data-icon="download"></span> Exportar JSON</button>' +
       '<button class="btn secondary small" data-action="import-json"><span data-icon="upload"></span> Importar JSON</button>' +
       '<button class="btn danger small" data-action="reset-app"><span data-icon="trash"></span> Restaurar padrões</button></div>' +
       '<input type="file" id="importFile" accept="application/json" class="hidden">' +
       '<div class="info-box">Os dados também ficam salvos neste navegador (IndexedDB). Exporte um backup antes de limpar o navegador.</div></div>' +
 
-      '<div class="settings-section"><h3>Fontes dos valores padrão</h3><p>Referências usadas como ponto de partida — tudo é editável.</p>' +
+      '<div class="settings-section admin-settings"><h3>Fontes dos valores padrão</h3><p>Referências usadas como ponto de partida — tudo é editável.</p>' +
       '<div style="font-size:11px;color:var(--text-secondary);line-height:1.7">' +
       '• Copel/ANEEL 2026: R$ 0,76802/kWh (TUSD+TE) + ICMS/PIS/COFINS ≈ R$ 1,01/kWh.<br>' +
       '• Bambu Lab A1 mini: 80 W em PLA, 75 W em PET-G (wiki oficial).<br>' +
@@ -825,6 +825,7 @@
       '• Mercado FDM 2026: peças pequenas R$ 15–45, médias R$ 45–140, grandes R$ 140–400; R$ 0,80–2,50/g.' +
       '</div></div>' +
       '</div></div>';
+    if (!isAdmin()) $('settingsContent').querySelectorAll('.admin-settings').forEach(function (el) { el.classList.add('hidden'); });
     paintIcons($('settingsContent'));
   }
 
@@ -1315,6 +1316,7 @@
       reader.readAsText(t.files[0]);
     }
     if (t.dataset && t.dataset.setting) {
+      if (!isAdmin() && t.dataset.setting !== 'appearance.theme') { toast('Somente administradores podem alterar parâmetros.', true); renderSettings(); return; }
       let val = t.value;
       const path = t.dataset.setting;
       if (path === 'cloud.autoSync') val = val === 'true';
