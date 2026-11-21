@@ -36,6 +36,30 @@
     target[last] = val;
   };
   const numOr = function (v, d) { const n = Number(v); return isNaN(n) ? (d || 0) : n; };
+  const isAdmin = function () { return !!(window.Auth && Auth.isAdmin); };
+  const currentSellerId = function () { return (window.Auth && Auth.userId) || ''; };
+  const currentSellerName = function () { return (window.Auth && Auth.userName) || 'Vendedor'; };
+
+  function commissionOf(item) {
+    const st = S();
+    const cfg = st.settings.commission || {};
+    const share = numOr(cfg.sellerShare, 50) / 100;
+    const value = item && item.result ? numOr(item.result.price) : numOr(item && item.value);
+    const cost = item && item.result ? numOr(item.result.totalCost) : numOr(item && item.cost);
+    return Math.max(0, (value - cost) * share);
+  }
+
+  function visibleSales() {
+    const all = S().sales || [];
+    if (isAdmin()) return all;
+    const id = currentSellerId();
+    return all.filter(function (s) { return s.sellerId ? s.sellerId === id : !s.sellerId; });
+  }
+
+  function visibleQuotes() {
+    const all = S().quotes || [];
+    return isAdmin() ? all : all; // orçamentos são compartilhados entre todos os usuários
+  }
 
   const ICONS = {
     grid: '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
@@ -100,12 +124,21 @@
     inventory: ['Estoque', 'Insumos, consumo e reposição.'],
     services: ['Serviços', 'Serviços adicionais do seu negócio.'],
     clients: ['Clientes', 'Cadastro de clientes para orçamentos.'],
-    users: ['Usuários', 'Contas com acesso administrativo ao sistema.'],
+    users: ['Usuários', 'Contas e permissões de acesso ao sistema.'],
+    requests: ['Solicitações', 'Pedidos de exclusão de vendas aguardando aprovação.'],
     settings: ['Configurações', 'Todos os valores e parâmetros editáveis.']
   };
 
+  const USER_HIDDEN_VIEWS = { users: 1, requests: 1, inventory: 1, services: 1 };
+
+  function allowed(view) {
+    if (isAdmin()) return true;
+    return !USER_HIDDEN_VIEWS[view];
+  }
+
   function go(view) {
     if (!VIEWS[view]) return;
+    if (!allowed(view)) { toast('Esta área é restrita a administradores.', true); return; }
     currentView = view;
     document.querySelectorAll('.view').forEach(function (v) { v.classList.toggle('hidden', v.dataset.view !== view); });
     document.querySelectorAll('.nav-item').forEach(function (b) { b.classList.toggle('active', b.dataset.view === view); });
@@ -118,6 +151,9 @@
   }
 
   function renderView() {
+    sellerSelectMarkup('sellerFilter', $('sellerFilter') ? $('sellerFilter').value : 'all');
+    sellerSelectMarkup('sellerFilterSales', $('sellerFilterSales') ? $('sellerFilterSales').value : 'all');
+    renderQuoteCommissionPreview();
     switch (currentView) {
       case 'dashboard': renderDashboard(); break;
       case 'calculator': renderCalc(); break;
@@ -128,6 +164,7 @@
       case 'services': renderServices(); break;
       case 'clients': renderClients(); break;
       case 'users': renderUsers(); break;
+      case 'requests': renderRequests(); break;
       case 'settings': renderSettings(); break;
     }
     renderCounters();
@@ -136,7 +173,7 @@
 
   function renderCounters() {
     const st = S();
-    const pend = st.quotes.filter(function (q) { return q.status === 'sent' || q.status === 'draft'; }).length;
+    const pend = visibleQuotes().filter(function (q) { return q.status === 'sent' || q.status === 'draft'; }).length;
     const low = st.stock.filter(function (i) { return numOr(i.qty, 0) <= numOr(i.min, 0); }).length;
     $('countQuotes').textContent = pend || '';
     $('countStock').textContent = low || '';
@@ -156,19 +193,24 @@
   /* ---------- Dashboard ---------- */
   function renderDashboard() {
     const st = S();
-    const sales = st.sales.slice().sort(function (a, b) { return new Date(b.date) - new Date(a.date); });
+    let sales = visibleSales().slice().sort(function (a, b) { return new Date(b.date) - new Date(a.date); });
+    const sellerFilter = $('sellerFilter') ? $('sellerFilter').value : 'all';
+    if (isAdmin() && sellerFilter && sellerFilter !== 'all') {
+      sales = sales.filter(function (s) { return sellerIdOf(s) === sellerFilter; });
+    }
     const revenue = sales.reduce(function (a, s) { return a + numOr(s.value); }, 0);
     const cost = sales.reduce(function (a, s) { return a + numOr(s.cost); }, 0);
     const profit = revenue - cost;
     const margin = revenue ? (profit / revenue) * 100 : 0;
-    const pending = st.quotes.filter(function (q) { return q.status === 'sent' || q.status === 'draft'; });
+    const commission = sales.reduce(function (a, s) { return a + commissionOf(s); }, 0);
+    const pending = visibleQuotes().filter(function (q) { return q.status === 'sent' || q.status === 'draft'; });
     const pendingValue = pending.reduce(function (a, q) { return a + numOr(q.result && q.result.price); }, 0);
     const lowStock = st.stock.filter(function (i) { return numOr(i.qty, 0) <= numOr(i.min, 0); });
 
     const kpis = [
-      { label: 'Faturamento total', value: money(revenue), icon: 'wallet', foot: sales.length + ' venda(s) registrada(s)', cls: '' },
+      { label: isAdmin() ? 'Faturamento total' : 'Seu faturamento', value: money(revenue), icon: 'wallet', foot: sales.length + ' venda(s) registrada(s)', cls: '' },
       { label: 'Lucro acumulado', value: money(profit), icon: 'trend', foot: 'Custos de ' + money(cost), cls: 'green' },
-      { label: 'Margem sobre venda', value: Calc.r2(margin) + '%', icon: 'chart', foot: 'Ideal ' + st.settings.margins.ideal + '% · mínimo ' + st.settings.margins.minimum + '%', cls: 'purple' },
+      { label: 'Comissão', value: money(commission), icon: 'chart', foot: (numOr(st.settings.commission.sellerShare, 50)) + '% do lucro', cls: 'purple' },
       { label: 'Em aberto', value: money(pendingValue), icon: 'doc', foot: pending.length + ' orçamento(s) pendente(s)', cls: 'orange' }
     ];
     $('kpis').innerHTML = kpis.map(function (k) {
@@ -207,9 +249,13 @@
     pending.filter(function (q) { return q.status === 'sent'; }).forEach(function (q) {
       alerts.push({ icon: 'send', title: 'Orçamento ' + q.number + ' enviado', text: 'Aguardando resposta de ' + (q.clientName || 'cliente') + '.', ok: false });
     });
-    const below = st.quotes.filter(function (q) { return q.result && q.result.margin < st.settings.margins.minimum && q.status !== 'done'; });
+    const below = visibleQuotes().filter(function (q) { return q.result && q.result.margin < st.settings.margins.minimum && q.status !== 'done'; });
     if (below.length) alerts.push({ icon: 'alert', title: below.length + ' orçamento(s) abaixo da margem mínima', text: 'Revise antes de enviar ao cliente.', ok: false });
-    if (!st.settings.cloud.url) alerts.push({ icon: 'cloud', title: 'Banco local em uso', text: 'Configure a nuvem gratuita em Configurações para acessar de qualquer dispositivo.', ok: true });
+    if (isAdmin()) {
+      const pendingRequests = (st.deleteRequests || []).filter(function (r) { return r.status === 'pending'; }).length;
+      if (pendingRequests) alerts.push({ icon: 'trash', title: pendingRequests + ' solicitação(ões) de exclusão', text: 'Aguarde a aprovação em Solicitações.', ok: false });
+      if (!st.settings.cloud.url) alerts.push({ icon: 'cloud', title: 'Banco local em uso', text: 'Configure a nuvem gratuita em Configurações para acessar de qualquer dispositivo.', ok: true });
+    }
     if (!alerts.length) alerts.push({ icon: 'check', title: 'Tudo em dia!', text: 'Nenhuma pendência no momento.', ok: true });
     $('alerts').innerHTML = alerts.slice(0, 6).map(function (a) {
       return '<div class="alert-row ' + (a.ok ? 'ok' : '') + '"><span class="alert-icon"><span data-icon="' + a.icon + '"></span></span><div><strong>' + esc(a.title) + '</strong><span>' + esc(a.text) + '</span></div></div>';
@@ -222,9 +268,12 @@
       $('recentSales').innerHTML = '<table><thead><tr><th>Produto</th><th>Data</th><th class="num">Valor</th><th class="num">Lucro</th></tr></thead><tbody>' +
         sales.slice(0, 5).map(function (s) {
           const l = numOr(s.value) - numOr(s.cost);
-          return '<tr><td><strong>' + esc(s.product) + '</strong><span class="sub">' + esc(s.client || '—') + '</span></td><td>' + dateBR(s.date) + '</td><td class="num">' + money(s.value) + '</td><td class="num ' + (l >= 0 ? 'positive' : 'negative') + '">' + money(l) + '</td></tr>';
+          return '<tr><td><strong>' + esc(s.product) + '</strong><span class="sub">' + esc(s.client || '—') + (isAdmin() ? ' · ' + esc(sellerNameOf(s)) : '') + '</span></td><td>' + dateBR(s.date) + '</td><td class="num">' + money(s.value) + '</td><td class="num ' + (l >= 0 ? 'positive' : 'negative') + '">' + money(l) + '</td></tr>';
         }).join('') + '</tbody></table>';
     }
+
+    /* Vendedores */
+    renderSellerRanking(sales);
 
     /* Ranking */
     const groups = {};
@@ -242,6 +291,29 @@
 
   function emptyState(text) {
     return '<div class="empty-state"><span data-icon="empty"></span>' + esc(text) + '</div>';
+  }
+
+  function sellerIdOf(sale) { return String(sale && sale.sellerId || 'legacy'); }
+  function sellerNameOf(sale) { return (sale && sale.sellerName) || 'Vendedor não identificado'; }
+
+  function renderSellerRanking(sales) {
+    const el = $('sellerRanking');
+    if (!el) return;
+    const groups = {};
+    sales.forEach(function (s) {
+      const k = sellerIdOf(s);
+      if (!groups[k]) groups[k] = { id: k, name: sellerNameOf(s), revenue: 0, cost: 0, count: 0 };
+      groups[k].revenue += numOr(s.value);
+      groups[k].cost += numOr(s.cost);
+      groups[k].count += 1;
+    });
+    const rows = Object.values(groups).sort(function (a, b) { return b.revenue - a.revenue; });
+    el.innerHTML = rows.length ? '<table><thead><tr><th>' + (isAdmin() ? 'Vendedor' : 'Resumo') + '</th><th class="num">Vendas</th><th class="num">Faturamento</th><th class="num">Comissão</th></tr></thead><tbody>' +
+      rows.map(function (r) {
+        const profit = r.revenue - r.cost;
+        const commission = profit * numOr(S().settings.commission.sellerShare, 50) / 100;
+        return '<tr><td><strong>' + esc(r.name) + '</strong></td><td class="num">' + r.count + '</td><td class="num"><strong>' + money(r.revenue) + '</strong></td><td class="num">' + money(commission) + '</td></tr>';
+      }).join('') + '</tbody></table>' : emptyState('Nenhum dado por vendedor.');
   }
 
   /* ---------- Calculadora ---------- */
@@ -354,6 +426,8 @@
       number: (currentQuoteId && st.quotes.find(function (q) { return q.id === currentQuoteId; }) || {}).number || num,
       createdAt: new Date().toISOString(),
       status: 'draft',
+      sellerId: (currentQuoteId && st.quotes.find(function (q) { return q.id === currentQuoteId; }) || {}).sellerId || currentSellerId(),
+      sellerName: (currentQuoteId && st.quotes.find(function (q) { return q.id === currentQuoteId; }) || {}).sellerName || currentSellerName(),
       clientId: draft.clientId,
       clientName: client ? client.name : 'Consumidor final',
       input: Object.assign({}, draft),
@@ -378,6 +452,7 @@
     const r = q.result;
     const sale = {
       id: Store.uid('sale'), product: q.title, client: q.clientName, date: new Date().toISOString().slice(0, 10),
+      sellerId: q.sellerId || currentSellerId(), sellerName: q.sellerName || currentSellerName(),
       qty: r.qty, cost: r.totalCost, value: r.price,
       material: r.isResin ? 'resin' : q.input.material,
       consumedQty: r.consumedQty, quoteId: q.id, quoteNumber: q.number
@@ -391,20 +466,21 @@
   function renderQuotes() {
     const st = S();
     const filter = $('quoteFilter').value;
-    const list = st.quotes.slice().sort(function (a, b) { return new Date(b.createdAt) - new Date(a.createdAt); })
+    const list = visibleQuotes().slice().sort(function (a, b) { return new Date(b.createdAt) - new Date(a.createdAt); })
       .filter(function (q) { return filter === 'all' || q.status === filter; });
     if (!list.length) { $('quotesTable').innerHTML = emptyState('Nenhum orçamento encontrado. Use a calculadora para criar um.'); return; }
     const statusMap = { draft: ['Rascunho', ''], sent: ['Enviado', 'blue'], approved: ['Aprovado', 'green'], done: ['Concluído', 'purple'] };
-    $('quotesTable').innerHTML = '<table><thead><tr><th>Número</th><th>Peça / cliente</th><th>Data</th><th class="num">Custo</th><th class="num">Valor</th><th class="num">Margem</th><th>Status</th><th class="num">Ações</th></tr></thead><tbody>' +
+    $('quotesTable').innerHTML = '<table><thead><tr><th>Número</th><th>Peça / cliente</th><th>Data</th><th class="num">Custo</th><th class="num">Valor</th><th class="num">Margem</th><th class="num">Sua comissão</th><th>Status</th><th class="num">Ações</th></tr></thead><tbody>' +
       list.map(function (q) {
         const r = q.result || {};
         const stt = statusMap[q.status] || statusMap.draft;
         const next = q.status === 'draft' ? 'sent' : q.status === 'sent' ? 'approved' : 'done';
         const converted = !!linkedSale(q);
-        return '<tr><td><strong>' + esc(q.number) + '</strong></td>' +
+        return '<tr><td><strong>' + esc(q.number) + '</strong><span class="sub">' + esc(sellerNameOf(q)) + '</span></td>' +
           '<td><strong>' + esc(q.title) + '</strong><span class="sub">' + esc(q.clientName || 'Consumidor final') + '</span></td>' +
           '<td>' + dateBR(q.createdAt) + '</td><td class="num">' + money(r.totalCost) + '</td><td class="num"><strong>' + money(r.price) + '</strong></td>' +
           '<td class="num ' + (r.margin >= st.settings.margins.minimum ? 'positive' : 'negative') + '">' + Calc.r2(r.margin || 0) + '%</td>' +
+          '<td class="num positive">' + money(commissionOf(q)) + '</td>' +
           '<td><span class="badge ' + stt[1] + '">' + stt[0] + '</span></td>' +
           '<td><div class="row-actions">' +
           '<button class="icon-action" data-action="quote-pdf" data-id="' + q.id + '" title="Gerar PDF"><span data-icon="pdf"></span></button>' +
@@ -421,27 +497,86 @@
   /* ---------- Vendas ---------- */
   function renderSales() {
     const st = S();
-    const sales = st.sales.slice().sort(function (a, b) { return new Date(b.date) - new Date(a.date); });
+    let sales = visibleSales().slice().sort(function (a, b) { return new Date(b.date) - new Date(a.date); });
+    const filter = $('sellerFilterSales') ? $('sellerFilterSales').value : 'all';
+    if (isAdmin() && filter && filter !== 'all') {
+      sales = sales.filter(function (s) { return sellerIdOf(s) === filter; });
+    }
     const revenue = sales.reduce(function (a, s) { return a + numOr(s.value); }, 0);
     const cost = sales.reduce(function (a, s) { return a + numOr(s.cost); }, 0);
     const profit = revenue - cost;
     const margin = revenue ? profit / revenue * 100 : 0;
+    const commission = sales.reduce(function (a, s) { return a + commissionOf(s); }, 0);
     $('salesKpis').innerHTML = [
-      { label: 'Receita', value: money(revenue), icon: 'wallet', foot: sales.length + ' vendas' },
+      { label: isAdmin() ? 'Receita' : 'Seu faturamento', value: money(revenue), icon: 'wallet', foot: sales.length + ' vendas' },
       { label: 'Custo total', value: money(cost), icon: 'box', foot: 'Insumos, energia e mão de obra' },
-      { label: 'Lucro', value: money(profit), icon: 'trend', foot: 'Resultado acumulado' },
+      { label: isAdmin() ? 'Lucro' : 'Sua comissão', value: money(isAdmin() ? profit : commission), icon: 'trend', foot: isAdmin() ? 'Resultado acumulado' : numOr(st.settings.commission.sellerShare, 50) + '% do lucro' },
       { label: 'Margem', value: Calc.r2(margin) + '%', icon: 'chart', foot: 'Lucro sobre venda' }
     ].map(function (k) {
       return '<div class="kpi"><div class="kpi-top"><span class="kpi-label">' + k.label + '</span><span class="kpi-icon"><span data-icon="' + k.icon + '"></span></span></div><div class="kpi-value">' + k.value + '</div><div class="kpi-foot">' + esc(k.foot) + '</div></div>';
     }).join('');
 
-    $('salesTable').innerHTML = sales.length ? '<table><thead><tr><th>Produto</th><th>Cliente</th><th>Data</th><th class="num">Qtd</th><th class="num">Custo</th><th class="num">Venda</th><th class="num">Lucro</th><th class="num">Margem</th><th></th></tr></thead><tbody>' +
+    $('salesTable').innerHTML = sales.length ? '<table><thead><tr><th>Produto</th><th>Cliente</th><th>Data</th><th class="num">Qtd</th><th class="num">Custo</th><th class="num">Venda</th><th class="num">Lucro</th><th class="num">Margem</th><th class="num">Comissão</th><th>' + (isAdmin() ? 'Vendedor' : 'Status') + '</th><th></th></tr></thead><tbody>' +
       sales.map(function (s) {
         const l = numOr(s.value) - numOr(s.cost);
         const m = numOr(s.value) ? l / numOr(s.value) * 100 : 0;
-        return '<tr><td><strong>' + esc(s.product) + '</strong></td><td>' + esc(s.client || '—') + '</td><td>' + dateBR(s.date) + '</td><td class="num">' + numOr(s.qty, 1) + '</td><td class="num">' + money(s.cost) + '</td><td class="num"><strong>' + money(s.value) + '</strong></td><td class="num ' + (l >= 0 ? 'positive' : 'negative') + '">' + money(l) + '</td><td class="num">' + Calc.r2(m) + '%</td><td><div class="row-actions"><button class="icon-action danger" data-action="sale-delete" data-id="' + s.id + '" title="Excluir"><span data-icon="trash"></span></button></div></td></tr>';
+        const pending = (st.deleteRequests || []).some(function (r) { return r.saleId === s.id && r.status === 'pending'; });
+        const statusCell = isAdmin() ? esc(sellerNameOf(s)) : (pending ? '<span class="badge orange">Exclusão solicitada</span>' : '<span class="badge green">Ativa</span>');
+        return '<tr><td><strong>' + esc(s.product) + '</strong></td><td>' + esc(s.client || '—') + '</td><td>' + dateBR(s.date) + '</td><td class="num">' + numOr(s.qty, 1) + '</td><td class="num">' + money(s.cost) + '</td><td class="num"><strong>' + money(s.value) + '</strong></td><td class="num ' + (l >= 0 ? 'positive' : 'negative') + '">' + money(l) + '</td><td class="num">' + Calc.r2(m) + '%</td><td class="num positive">' + money(commissionOf(s)) + '</td><td>' + statusCell + '</td><td><div class="row-actions">' + (pending
+          ? '<span class="badge orange">Aguardando admin</span>'
+          : '<button class="icon-action danger" data-action="' + (isAdmin() ? 'sale-delete' : 'sale-request-delete') + '" data-id="' + s.id + '" title="' + (isAdmin() ? 'Excluir' : 'Solicitar exclusão') + '"><span data-icon="trash"></span></button>') + '</div></td></tr>';
       }).join('') + '</tbody></table>' : emptyState('Nenhuma venda registrada. Conclua um orçamento ou adicione uma venda.');
   }
+
+  function sellerOptions() {
+    const map = {};
+    (S().sales || []).forEach(function (s) { map[sellerIdOf(s)] = sellerNameOf(s); });
+    (S().quotes || []).forEach(function (q) { map[sellerIdOf(q)] = sellerNameOf(q); });
+    return Object.keys(map).map(function (k) { return [k, map[k]]; });
+  }
+
+  function sellerSelectMarkup(id, current) {
+    const el = $(id);
+    if (!el) return '';
+    const opts = sellerOptions();
+    if (!isAdmin() || !opts.length) { el.classList.add('hidden'); return ''; }
+    el.classList.remove('hidden');
+    el.innerHTML = '<option value="all">Todos os vendedores</option>' + opts.map(function (o) {
+      return '<option value="' + esc(o[0]) + '"' + (String(current || 'all') === String(o[0]) ? ' selected' : '') + '>' + esc(o[1]) + '</option>';
+    }).join('');
+    return el.value;
+  }
+
+  function renderQuoteCommissionPreview() {
+    const el = $('quoteCommissionPreview');
+    if (!el) return;
+    const quotes = visibleQuotes().slice().sort(function (a, b) { return new Date(b.createdAt) - new Date(a.createdAt); }).slice(0, 5);
+    el.innerHTML = quotes.length ? '<table><thead><tr><th>Orçamento</th><th class="num">Valor</th><th class="num">Comissão</th></tr></thead><tbody>' +
+      quotes.map(function (q) {
+        return '<tr><td><strong>' + esc(q.number) + '</strong><span class="sub">' + esc(sellerNameOf(q)) + '</span></td><td class="num">' + money(numOr(q.result && q.result.price)) + '</td><td class="num positive">' + money(commissionOf(q)) + '</td></tr>';
+      }).join('') + '</tbody></table>' : emptyState('Nenhum orçamento para prévia.');
+  }
+
+  function renderRequests() {
+    const el = $('requestsTable');
+    if (!el) return;
+    if (!isAdmin()) { el.innerHTML = emptyState('Apenas administradores podem ver as solicitações.'); return; }
+    const list = (S().deleteRequests || []).slice().sort(function (a, b) { return new Date(b.requestedAt) - new Date(a.requestedAt); });
+    const pending = list.filter(function (r) { return r.status === 'pending'; });
+    const statusLabel = { pending: ['Pendente', 'orange'], approved: ['Aprovada', 'green'], rejected: ['Recusada', 'red'] };
+    el.innerHTML = list.length ? '<table><thead><tr><th>Venda</th><th>Vendedor</th><th>Motivo</th><th>Data</th><th>Status</th><th class="num">Ações</th></tr></thead><tbody>' +
+      list.map(function (r) {
+        const stt = statusLabel[r.status] || statusLabel.pending;
+        return '<tr><td><strong>' + esc(r.saleProduct || 'Venda') + '</strong><span class="sub">' + esc(r.saleClient || '') + '</span></td><td>' + esc(r.sellerName || '—') + '</td><td>' + esc(r.reason) + '</td><td>' + dateBR(r.requestedAt) + '</td><td><span class="badge ' + stt[1] + '">' + stt[0] + '</span></td><td><div class="row-actions">' +
+          (r.status === 'pending'
+            ? '<button class="btn secondary small" data-action="request-approve" data-id="' + r.id + '">Aprovar</button><button class="btn ghost small" data-action="request-reject" data-id="' + r.id + '">Recusar</button>'
+            : '<span class="sub">' + esc(r.reviewNote || '') + '</span>') +
+          '</div></td></tr>';
+      }).join('') + '</tbody></table>' : emptyState('Nenhuma solicitação de exclusão.');
+    const count = $('pendingRequestsCount');
+    if (count) count.textContent = pending.length;
+  }
+
 
   /* ---------- Produtos ---------- */
   function productCategoryOptions() {
@@ -628,6 +763,7 @@
       rows: [
         ['labor.hourlyRate', 'Valor da hora de trabalho (R$)', 'number'], ['labor.modelingRate', 'Modelagem 3D (R$/h)', 'number'],
         ['margins.ideal', 'Margem ideal (%)', 'number'], ['margins.minimum', 'Margem mínima (%)', 'number'],
+        ['commission.sellerShare', 'Comissão do vendedor (% do lucro)', 'number'],
         ['market.perGramMin', 'Mercado — mínimo R$/g', 'number'], ['market.perGramMax', 'Mercado — máximo R$/g', 'number']
       ]
     },
@@ -923,10 +1059,76 @@
           break;
 
         case 'sale-delete':
-          if (confirm('Excluir esta venda?')) { removeItem('sales', id); toast('Venda excluída.'); }
+          if (!isAdmin()) { toast('Somente administradores podem excluir vendas.', true); break; }
+          if (confirm('Excluir esta venda?')) {
+            const sale = findBy('sales', id);
+            if (sale && sale.material && numOr(sale.consumedQty) > 0) {
+              const item = st.stock.find(function (i) { return i.material === sale.material; });
+              if (item) {
+                item.qty = numOr(item.qty) + numOr(sale.consumedQty);
+                item.updatedAt = new Date().toISOString();
+                registerMovement(item, 'entrada', numOr(sale.consumedQty), 'Estorno pela exclusão da venda ' + sale.product);
+              }
+            }
+            removeItem('sales', id);
+            toast('Venda excluída e estoque estornado.');
+          }
           break;
 
+        case 'sale-request-delete': {
+          if (isAdmin()) break;
+          const sale = findBy('sales', id);
+          if (!sale) break;
+          const pending = (st.deleteRequests || []).some(function (r) { return r.saleId === id && r.status === 'pending'; });
+          if (pending) { toast('Já existe uma solicitação pendente para esta venda.', true); break; }
+          openModal('Solicitar exclusão de venda', sale.product, [
+            { key: 'reason', label: 'Motivo', type: 'textarea', value: '', required: true, full: true, placeholder: 'Explique por que esta venda deve ser excluída' }
+          ], function (d) {
+            if (!st.deleteRequests) st.deleteRequests = [];
+            st.deleteRequests.push({
+              id: Store.uid('req'), saleId: id, saleProduct: sale.product, saleClient: sale.client,
+              sellerId: currentSellerId(), sellerName: currentSellerName(), reason: d.reason,
+              status: 'pending', requestedAt: new Date().toISOString()
+            });
+            Store.save();
+            const subject = encodeURIComponent('Solicitação de exclusão de venda · ' + sale.product);
+            const body = encodeURIComponent('Olá!\n\nSolicito a exclusão da venda abaixo:\n\nProduto: ' + sale.product + '\nCliente: ' + (sale.client || '—') + '\nValor: ' + money(sale.value) + '\nData: ' + dateBR(sale.date) + '\nVendedor: ' + currentSellerName() + '\nMotivo: ' + d.reason + '\n\nSolicitação registrada no sistema em T&W 3D Maker.');
+            window.location.href = 'mailto:williangabriel681@gmail.com?subject=' + subject + '&body=' + body;
+            toast('Solicitação enviada. Aguarde a aprovação de um administrador.');
+          }, 'Enviar solicitação');
+          break;
+        }
+
+        case 'request-approve':
+        case 'request-reject': {
+          if (!isAdmin()) { toast('Acesso negado.', true); break; }
+          const req = findBy('deleteRequests', id);
+          if (!req || req.status !== 'pending') break;
+          const approve = a === 'request-approve';
+          req.status = approve ? 'approved' : 'rejected';
+          req.reviewedAt = new Date().toISOString();
+          req.reviewedBy = currentSellerId();
+          req.reviewNote = approve ? 'Exclusão aprovada.' : 'Exclusão recusada.';
+          if (approve) {
+            const sale = findBy('sales', req.saleId);
+            if (sale && sale.material && numOr(sale.consumedQty) > 0) {
+              const item = st.stock.find(function (i) { return i.material === sale.material; });
+              if (item) {
+                item.qty = numOr(item.qty) + numOr(sale.consumedQty);
+                item.updatedAt = new Date().toISOString();
+                registerMovement(item, 'entrada', numOr(sale.consumedQty), 'Estorno pela exclusão aprovada: ' + sale.product);
+              }
+            }
+            removeItem('sales', req.saleId);
+          }
+          Store.save();
+          toast(approve ? 'Exclusão aprovada e venda removida.' : 'Solicitação recusada.');
+          renderRequests();
+          break;
+        }
+
         case 'product-new':
+          if (!isAdmin()) { toast('Somente administradores podem alterar produtos.', true); break; }
           openModal('Novo produto', 'Item recorrente do catálogo.', [
             { key: 'name', label: 'Nome', required: true }, { key: 'category', label: 'Categoria' },
             { key: 'description', label: 'Descrição', type: 'textarea' },
@@ -934,6 +1136,7 @@
           ], function (d) { upsert('products', Object.assign({ id: Store.uid('pr') }, d)); toast('Produto salvo.'); });
           break;
         case 'product-edit': {
+          if (!isAdmin()) { toast('Somente administradores podem alterar produtos.', true); break; }
           const p = findBy('products', id);
           openModal('Editar produto', '', [
             { key: 'name', label: 'Nome', value: p.name, required: true }, { key: 'category', label: 'Categoria', value: p.category },
@@ -943,16 +1146,19 @@
           break;
         }
         case 'product-delete':
+          if (!isAdmin()) { toast('Somente administradores podem alterar produtos.', true); break; }
           if (confirm('Excluir produto?')) { removeItem('products', id); toast('Produto excluído.'); }
           break;
 
         case 'service-new':
+          if (!isAdmin()) { toast('Acesso restrito a administradores.', true); break; }
           openModal('Novo serviço', 'Serviço adicional oferecido.', [
             { key: 'name', label: 'Nome', required: true }, { key: 'description', label: 'Descrição', type: 'textarea' },
             { key: 'price', label: 'Preço (R$)', type: 'number' }, { key: 'unit', label: 'Unidade', value: 'peça' }
           ], function (d) { upsert('services', Object.assign({ id: Store.uid('srv') }, d)); toast('Serviço salvo.'); });
           break;
         case 'service-edit': {
+          if (!isAdmin()) { toast('Acesso restrito a administradores.', true); break; }
           const s2 = findBy('services', id);
           openModal('Editar serviço', '', [
             { key: 'name', label: 'Nome', value: s2.name, required: true }, { key: 'description', label: 'Descrição', type: 'textarea', value: s2.description },
@@ -961,29 +1167,35 @@
           break;
         }
         case 'service-delete':
+          if (!isAdmin()) { toast('Acesso restrito a administradores.', true); break; }
           if (confirm('Excluir serviço?')) { removeItem('services', id); toast('Serviço excluído.'); }
           break;
 
-        case 'client-new': openModal('Novo cliente', 'Dados para o orçamento.', clientForm(), function (d) { saveClient(d); }); break;
+        case 'client-new': if (!isAdmin()) { toast('Acesso restrito a administradores.', true); break; } openModal('Novo cliente', 'Dados para o orçamento.', clientForm(), function (d) { saveClient(d); }); break;
         case 'client-edit': {
+          if (!isAdmin()) { toast('Acesso restrito a administradores.', true); break; }
           const c = findBy('clients', id);
           openModal('Editar cliente', '', clientForm(c), function (d) { saveClient(d, id); });
           break;
         }
         case 'client-delete':
+          if (!isAdmin()) { toast('Acesso restrito a administradores.', true); break; }
           if (confirm('Excluir cliente?')) { removeItem('clients', id); toast('Cliente excluído.'); }
           break;
 
-        case 'stock-new': openModal('Novo insumo', 'Filamento ou resina em estoque.', stockForm(), function (d) { saveStock(d); }); break;
+        case 'stock-new': if (!isAdmin()) { toast('Acesso restrito a administradores.', true); break; } openModal('Novo insumo', 'Filamento ou resina em estoque.', stockForm(), function (d) { saveStock(d); }); break;
         case 'stock-edit': {
+          if (!isAdmin()) { toast('Acesso restrito a administradores.', true); break; }
           const i = findBy('stock', id);
           openModal('Editar insumo', '', stockForm(i), function (d) { saveStock(d, id); });
           break;
         }
         case 'stock-delete':
+          if (!isAdmin()) { toast('Acesso restrito a administradores.', true); break; }
           if (confirm('Excluir insumo?')) { removeItem('stock', id); toast('Insumo excluído.'); }
           break;
         case 'stock-move': {
+          if (!isAdmin()) { toast('Acesso restrito a administradores.', true); break; }
           const i = findBy('stock', id);
           openModal('Movimentar estoque', i.name + ' · atual: ' + Calc.r2(i.qty) + ' ' + i.unit, [
             { key: 'type', label: 'Tipo', type: 'select', options: [['entrada', 'Entrada'], ['saida', 'Saída'], ['ajuste', 'Ajuste']], value: 'entrada' },
@@ -1006,11 +1218,13 @@
         case 'sale-new': openModal('Nova venda', 'Registro manual de receita e custo.', saleForm(), function (d) { saveSale(d); }, 'Salvar venda', wireSaleForm); break;
 
         case 'user-new':
+          if (!isAdmin()) { toast('Acesso negado.', true); break; }
           openModal('Novo usuário', 'Acesso administrativo ao sistema.', userForm(), function (d) {
             saveUser(d, null, null).catch(function (e) { toast(e.message, true); });
           }, 'Criar usuário');
           break;
         case 'user-edit': {
+          if (!isAdmin()) { toast('Acesso negado.', true); break; }
           const u = findUser(id);
           if (!u) return;
           openModal('Editar usuário', u.email, userForm(u), function (d) {
@@ -1019,6 +1233,7 @@
           break;
         }
         case 'user-toggle': {
+          if (!isAdmin()) { toast('Acesso negado.', true); break; }
           const u = findUser(id);
           if (!u) return;
           await Auth.updateUser({
@@ -1030,6 +1245,7 @@
           break;
         }
         case 'user-delete': {
+          if (!isAdmin()) { toast('Acesso negado.', true); break; }
           const u = findUser(id);
           if (!u) return;
           if (confirm('Excluir o usuário ' + u.full_name + '? Esta ação não pode ser desfeita.')) {
@@ -1053,14 +1269,17 @@
           break;
 
         case 'cloud-push':
+          if (!isAdmin()) { toast('Acesso negado.', true); break; }
           await Store.pushCloud(); toast('Dados enviados para a nuvem.'); renderCounters(); break;
         case 'cloud-pull': {
+          if (!isAdmin()) { toast('Acesso negado.', true); break; }
           const ok = await Store.pullCloud();
           toast(ok ? 'Dados baixados da nuvem.' : 'Nenhum dado remoto encontrado.', !ok);
           renderView();
           break;
         }
         case 'export-json': {
+          if (!isAdmin()) { toast('Acesso negado.', true); break; }
           const blob = new Blob([Store.exportJSON()], { type: 'application/json' });
           const url = URL.createObjectURL(blob);
           const a2 = document.createElement('a');
@@ -1069,8 +1288,12 @@
           toast('Backup exportado.');
           break;
         }
-        case 'import-json': $('importFile').click(); break;
+        case 'import-json':
+          if (!isAdmin()) { toast('Acesso negado.', true); break; }
+          $('importFile').click();
+          break;
         case 'reset-app':
+          if (!isAdmin()) { toast('Acesso negado.', true); break; }
           if (confirm('Restaurar todos os padrões? Seus dados serão apagados.')) { Store.reset(); toast('Padrões restaurados.'); renderView(); }
           break;
       }
@@ -1083,6 +1306,7 @@
   document.addEventListener('change', function (ev) {
     const t = ev.target;
     if (t.id === 'importFile' && t.files && t.files[0]) {
+      if (!isAdmin()) { toast('Acesso negado.', true); return; }
       const reader = new FileReader();
       reader.onload = function () {
         try { Store.importJSON(reader.result); toast('Backup importado.'); renderView(); }
@@ -1104,6 +1328,8 @@
     }
     if (t.id === 'quoteFilter') renderQuotes();
     if (t.id === 'productCategoryFilter') renderProducts();
+    if (t.id === 'sellerFilter') renderDashboard();
+    if (t.id === 'sellerFilterSales') renderSales();
   });
 
   document.addEventListener('input', function (ev) {
@@ -1192,6 +1418,7 @@
   }
 
   function showApp() {
+    if (!allowed(currentView)) currentView = 'dashboard';
     appStarted = true;
     booted = true;
     $('loginScreen').classList.add('hidden');
@@ -1199,10 +1426,14 @@
     showLoginError('');
     const p = Auth.profile || {};
     $('userName').textContent = p.full_name || '—';
-    $('userRole').textContent = p.role === 'admin' ? 'Administrador' : 'Usuário';
+    $('userRole').textContent = p.role === 'admin' ? 'Administrador' : 'Vendedor';
     $('userAvatar').textContent = ((p.full_name || '?').trim().charAt(0) || '?').toUpperCase();
     const first = (p.full_name || '').trim().split(/\s+/)[0];
     $('heroGreeting').textContent = first ? 'Bom trabalho, ' + first + '!' : 'Bom trabalho!';
+    document.querySelectorAll('.admin-only').forEach(function (el) { el.classList.toggle('hidden', !isAdmin()); });
+    document.querySelectorAll('[data-action="product-new"], [data-action="service-new"], [data-action="client-new"], [data-action="stock-new"]').forEach(function (el) { el.classList.toggle('hidden', !isAdmin()); });
+    const usersDesc = document.querySelector('[data-view="users"] p');
+    if (usersDesc) usersDesc.textContent = 'Contas e permissões de acesso ao sistema.';
     applyTheme();
     paintIcons();
     renderView();

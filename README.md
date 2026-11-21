@@ -14,9 +14,13 @@ Calculadora de custos e orçamentos para impressão 3D **FDM** e **resina**, com
 - **Orçamentos** — salvar, editar, avançar status (rascunho → enviado → aprovado → concluído) e gerar **PDF** com dados da empresa, do cliente, condições e valor.
 - **Configurações** — *todos* os valores são editáveis: materiais, pintura, energia, máquinas, purga do AMS, margens, taxas, perdas, dados da empresa e parâmetros de mercado.
 - **Banco de dados** — IndexedDB no navegador (funciona offline) + sincronização com **Supabase gratuito** (Postgres), com exportação/importação de backup JSON.
-- **Acesso restrito** — login obrigatório para qualquer tela. Somente contas com perfil de **administrador ativo** entram. A tela **Usuários** permite criar, editar, desativar e excluir admins, e cada um pode trocar sua senha em **Configurações → Minha conta**.
+- **Acesso por perfil** — login obrigatório para qualquer tela. Administradores veem tudo; vendedores acessam calculadora, orçamentos, vendas próprias, produtos (somente leitura) e sua comissão.
+- **Comissão** — padrão de 50% do lucro (`(valor da venda − custo) ÷ 2`), editável em **Configurações → Mão de obra, margens e mercado**.
+- **Quem vendeu?** — vendas e orçamentos registram `sellerId`/`sellerName`. O dashboard tem filtro por vendedor e ranking com faturamento e comissão.
+- **Exclusão de venda** — vendedor não exclui diretamente: abre uma solicitação com motivo (com aviso por e-mail ao admin). Somente admin aprova/recusa em **Solicitações**. A aprovação estorna o material consumido ao estoque e mantém o registro da solicitação como trilha de auditoria.
+- **Compartilhamento** — produtos, clientes e orçamentos são compartilhados entre todos os usuários. Cada vendedor vê apenas suas próprias vendas/faturamento; o admin vê todas.
 
-## Acesso (somente administradores)
+## Acesso
 
 Contas liberadas neste projeto:
 
@@ -25,7 +29,7 @@ Contas liberadas neste projeto:
 | Willian Molari | williangabriel681@gmail.com | Administrador |
 | Thais Vieira de Oliveira | taisv132@gmail.com | Administrador |
 
-O login usa Supabase Auth (e-mail + senha) e o RLS do Postgres libera as tabelas somente para administradores autenticados. Não existe modo anônimo: sem sessão válida, o app mostra apenas a tela de login.
+O login usa Supabase Auth (e-mail + senha). O RLS do Postgres exige sessão válida **e** perfil ativo (`admin` ou `user`). Não existe modo anônimo: sem sessão válida, o app mostra apenas a tela de login. A tela **Usuários** (somente admin) cria/editar/desativa/exclui contas e define o perfil.
 
 ## Rodando localmente
 
@@ -44,7 +48,7 @@ python3 -m http.server 8000
 3. Em **Project Settings → API**, copie a **Project URL** e a **publishable key** (`sb_publishable_...`). As credenciais de login são entregues separadamente aos administradores.
 4. No app, abra **Configurações → Banco de dados na nuvem**, cole os valores e use **Enviar para a nuvem** / **Baixar da nuvem**. Ative a sincronização automática se quiser.
 
-A chave publicada (`sb_publishable_...`) é própria para uso no navegador. O RLS exige `authenticated` **e** perfil de administrador ativo para ler ou gravar qualquer dado — inclusive o workspace. As funções `admin_*` usam `SECURITY DEFINER` e validam o perfil do chamador antes de agir.
+A chave publicada (`sb_publishable_...`) é própria para uso no navegador. O RLS exige `authenticated` **e** perfil ativo para ler/gravar o workspace (compartilhado). As funções `admin_*` usam `SECURITY DEFINER` e validam o perfil do chamador antes de agir. Solicitações de exclusão são gravadas em `public.sale_delete_requests`: o vendedor cria apenas a própria (`seller_id = auth.uid()`), e somente admin pode aprovar/recusar.
 
 Para criar novos usuários, use a tela **Usuários** do app (somente admins). O schema também aceita criação manual em *Authentication → Users*, seguida de:
 
@@ -95,7 +99,7 @@ css/styles.css      Design system Apple-like, temas claro/escuro, responsivo
 js/store.js         Estado, IndexedDB, backup JSON e cliente Supabase
 js/calculate.js     Motor de custos e precificação
 js/pdf.js           Geração de orçamento em PDF (jsPDF + fallback de impressão)
-js/auth.js          Login Supabase Auth, perfil admin e gestão de usuários
+js/auth.js          Login Supabase Auth, perfis admin/usuário e gestão de contas
 js/app.js           Interfaces, navegação, CRUD e eventos
 supabase/schema.sql Tabelas, RLS, policies e funções admin do banco gratuito
 ```

@@ -63,6 +63,7 @@
         },
         labor: { hourlyRate: 35, modelingRate: 80 },
         margins: { ideal: 65, minimum: 40 },
+        commission: { sellerShare: 50 },
         costs: {
           waste: 5,
           failureFdm: 8,
@@ -81,6 +82,7 @@
       clients: [],
       quotes: [],
       sales: [],
+      deleteRequests: [],
       products: [],
       stock: [
         { id: uid('stk'), material: 'pla', name: 'PLA', brand: 'Bambu / Genérico', qty: 1, unit: 'kg', min: 0.5, cost: 110, updatedAt: new Date().toISOString() },
@@ -206,8 +208,10 @@
       if (saved && saved.settings) {
         state = deepMerge(defaults(), saved);
       }
-      // migração: nome antigo da empresa
+      // migrações de compatibilidade
       if (state.settings.company.name === 'Molari 3D') state.settings.company.name = 'T&W 3D Maker';
+      if (!state.settings.commission) state.settings.commission = { sellerShare: 50 };
+      if (!Array.isArray(state.deleteRequests)) state.deleteRequests = [];
       await writeLocal(state);
       return state;
     },

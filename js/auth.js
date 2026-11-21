@@ -20,7 +20,7 @@
       'User not found': 'Usuário não encontrado.',
       'Password should be at least 6 characters': 'A senha deve ter ao menos 6 caracteres.',
       'New password should be different from the old password.': 'A nova senha deve ser diferente da anterior.',
-      'Access denied.': 'Acesso negado: apenas administradores podem realizar esta ação.',
+      'Access denied.': 'Acesso negado: você não tem permissão para realizar esta ação.',
       'Failed to fetch': 'Não foi possível conectar ao servidor. Verifique sua internet.'
     };
     return map[m] || m;
@@ -38,13 +38,17 @@
       .maybeSingle();
     if (result.error) throw new Error(translate(result.error.message));
     const p = result.data;
-    if (!p || p.role !== 'admin' || !p.active) { profile = null; return false; }
+    if (!p || p.role !== 'admin' && p.role !== 'user' || !p.active) { profile = null; return false; }
     profile = p;
     return true;
   }
 
   const Auth = {
     get ready() { return !!profile && !!session; },
+    get isAdmin() { return !!profile && profile.role === 'admin'; },
+    get isUser() { return !!profile && profile.role === 'user'; },
+    get userId() { return session ? session.user.id : ''; },
+    get userName() { return profile ? profile.full_name : ''; },
     get session() { return session; },
     get user() { return session ? session.user : null; },
     get profile() { return profile; },
@@ -65,7 +69,7 @@
           notify();
           return;
         }
-        // notifica somente depois de validar o perfil de admin
+        // notifica somente depois de validar o perfil ativo
         loadProfile().then(notify).catch(notify);
       });
       const result = await client.auth.getSession();
@@ -88,7 +92,7 @@
       if (!ok) {
         await client.auth.signOut();
         session = null;
-        throw new Error('Este e-mail não possui permissão de administrador ativo.');
+        throw new Error('Este e-mail não possui um perfil ativo. Procure um administrador.');
       }
       notify();
       return true;

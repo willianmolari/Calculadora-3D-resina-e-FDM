@@ -48,11 +48,11 @@
         </button>
 
         <p class="nav-label nav-label-spaced">OPERAÇÃO</p>
-        <button class="nav-item" data-view="inventory">
+        <button class="nav-item admin-only" data-view="inventory">
           <span class="nav-icon" data-icon="layers"></span><span>Estoque</span>
           <span class="nav-count alert" id="countStock">0</span>
         </button>
-        <button class="nav-item" data-view="services">
+        <button class="nav-item admin-only" data-view="services">
           <span class="nav-icon" data-icon="sparkle"></span><span>Serviços</span>
         </button>
         <button class="nav-item" data-view="clients">
@@ -60,7 +60,10 @@
         </button>
 
         <p class="nav-label nav-label-spaced">SISTEMA</p>
-        <button class="nav-item" data-view="users">
+        <button class="nav-item admin-only" data-view="requests">
+          <span class="nav-icon" data-icon="trash"></span><span>Solicitações</span>
+        </button>
+        <button class="nav-item admin-only" data-view="users">
           <span class="nav-icon" data-icon="shield"></span><span>Usuários</span>
         </button>
         <button class="nav-item" data-view="settings">
@@ -101,9 +104,14 @@
             <div>
               <span class="eyebrow">PAINEL DE CONTROLE</span>
               <h2 id="heroGreeting">Bom trabalho!</h2>
-              <p>Acompanhe faturamento, custos e margem em tempo real.</p>
+              <p>Acompanhe faturamento, custos, margem e comissão em tempo real.</p>
             </div>
             <div class="hero-orb" aria-hidden="true"></div>
+          </div>
+
+          <div class="filter-bar">
+            <label for="sellerFilter">Vendedor</label>
+            <select id="sellerFilter" class="compact-select"><option value="all">Todos os vendedores</option></select>
           </div>
 
           <div class="kpi-grid" id="kpis"></div>
@@ -134,9 +142,24 @@
             </div>
             <div class="card">
               <div class="card-header">
+                <div><h3 id="sellerRankingTitle">Vendedores</h3><p>Quem vendeu, quanto faturou e a comissão</p></div>
+              </div>
+              <div class="table-wrap" id="sellerRanking"></div>
+            </div>
+          </div>
+
+          <div class="grid-2">
+            <div class="card">
+              <div class="card-header">
                 <div><h3>Produtos mais lucrativos</h3><p>Por lucro acumulado</p></div>
               </div>
               <div id="topProducts" class="rank-list"></div>
+            </div>
+            <div class="card">
+              <div class="card-header">
+                <div><h3>Prévia por orçamento</h3><p>Prévia da comissão em orçamentos</p></div>
+              </div>
+              <div class="table-wrap" id="quoteCommissionPreview"></div>
             </div>
           </div>
         </section>
@@ -256,8 +279,11 @@
           <div class="kpi-grid kpi-grid-4" id="salesKpis"></div>
           <div class="card">
             <div class="card-header">
-              <div><h3>Vendas registradas</h3><p>Receita, custo e lucro de cada venda.</p></div>
-              <button class="btn secondary small" id="addSaleBtn" data-action="sale-new"><span data-icon="plus"></span> Nova venda</button>
+              <div><h3>Vendas registradas</h3><p>Receita, custo, lucro e comissão de cada venda.</p></div>
+              <div class="header-actions">
+                <select id="sellerFilterSales" class="compact-select"><option value="all">Todos os vendedores</option></select>
+                <button class="btn secondary small" id="addSaleBtn" data-action="sale-new"><span data-icon="plus"></span> Nova venda</button>
+              </div>
             </div>
             <div class="table-wrap" id="salesTable"></div>
           </div>
@@ -314,6 +340,17 @@
               <button class="btn secondary small" id="addClientBtn" data-action="client-new"><span data-icon="plus"></span> Novo cliente</button>
             </div>
             <div class="table-wrap" id="clientsTable"></div>
+          </div>
+        </section>
+
+        <!-- REQUESTS -->
+        <section class="view hidden" data-view="requests">
+          <div class="card">
+            <div class="card-header">
+              <div><h3>Solicitações de exclusão</h3><p>Vendedores solicitam; administradores aprovam ou recusam.</p></div>
+              <span class="badge orange" id="pendingRequestsCount">0</span>
+            </div>
+            <div class="table-wrap" id="requestsTable"></div>
           </div>
         </section>
 

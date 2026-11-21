@@ -66,6 +66,72 @@ $$;
 revoke all on function public.is_admin() from public;
 grant execute on function public.is_admin() to authenticated;
 
+create or replace function public.is_active_user()
+returns boolean
+language sql
+security definer
+stable
+set search_path = public, pg_temp
+as $$
+  select exists (
+    select 1 from public.profiles p
+    where p.id = auth.uid() and p.active
+  );
+$$;
+
+revoke all on function public.is_active_user() from public;
+grant execute on function public.is_active_user() to authenticated;
+
+-- ------------------------------------------------------------
+-- Solicitações de exclusão de venda (segregação de funções)
+-- O vendedor solicita; somente um admin aprova ou recusa.
+-- ------------------------------------------------------------
+create table if not exists public.sale_delete_requests (
+  id text primary key,
+  sale_id text not null,
+  sale_product text,
+  sale_client text,
+  seller_id uuid not null references public.profiles(id),
+  seller_name text,
+  reason text not null,
+  status text not null default 'pending' check (status in ('pending', 'approved', 'rejected')),
+  requested_at timestamptz not null default now(),
+  reviewed_at timestamptz,
+  reviewed_by uuid references public.profiles(id),
+  review_note text
+);
+
+create index if not exists sale_delete_requests_status_idx
+  on public.sale_delete_requests(status, requested_at desc);
+
+alter table public.sale_delete_requests enable row level security;
+
+drop policy if exists "sellers read own delete requests" on public.sale_delete_requests;
+create policy "sellers read own delete requests"
+  on public.sale_delete_requests for select
+  to authenticated
+  using (seller_id = auth.uid() or public.is_admin());
+
+drop policy if exists "sellers create delete requests" on public.sale_delete_requests;
+create policy "sellers create delete requests"
+  on public.sale_delete_requests for insert
+  to authenticated
+  with check (
+    public.is_active_user()
+    and seller_id = auth.uid()
+    and status = 'pending'
+  );
+
+drop policy if exists "admins review delete requests" on public.sale_delete_requests;
+create policy "admins review delete requests"
+  on public.sale_delete_requests for update
+  to authenticated
+  using (public.is_admin())
+  with check (public.is_admin());
+
+grant select, insert on public.sale_delete_requests to authenticated;
+grant update on public.sale_delete_requests to authenticated;
+
 create or replace function public.touch_updated_at()
 returns trigger as $$
 begin
@@ -84,12 +150,13 @@ create trigger workspace_touch
 -- ------------------------------------------------------------
 drop policy if exists "workspace_anon_all" on public.workspace;
 drop policy if exists "workspace_admin_all" on public.workspace;
-create policy "workspace_admin_all"
+drop policy if exists "workspace_active_all" on public.workspace;
+create policy "workspace_active_all"
   on public.workspace
   for all
   to authenticated
-  using (public.is_admin())
-  with check (public.is_admin());
+  using (public.is_active_user())
+  with check (public.is_active_user());
 
 drop policy if exists "profile_read" on public.profiles;
 drop policy if exists "profile_write" on public.profiles;
