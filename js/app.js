@@ -993,7 +993,7 @@
     const sellerValue = existing ? existing.sellerId : currentSellerId();
     return [
       { key: 'sellerId', label: 'Vendedor', type: 'select', options: sellers.map(function (u) { return [u.id, u.full_name || u.email || 'Usuário']; }), value: sellerValue, full: true, disabled: !isAdmin(), hint: isAdmin() ? 'Escolha quem realizou a venda.' : 'A venda será atribuída a você.' },
-      { key: 'productPick', label: 'Selecionar produto cadastrado', type: 'select', options: [['', '— preencher manualmente —']].concat(products.map(function (p) { return [p.id, p.name + (p.category ? ' · ' + p.category : '')]; })), value: '', full: true, hint: 'Ao selecionar, preenche produto, custo e valor. Você ainda pode editar.' },
+      { key: 'productPick', label: 'Selecionar produto cadastrado', type: 'select', options: [['', '— preencher manualmente —']].concat(products.map(function (p) { return [p.id, p.name + (p.category ? ' · ' + p.category : '')]; })), value: '', full: true, hint: 'Ao selecionar ou mudar a quantidade, custo e valor são recalculados. Você ainda pode editar.' },
       { key: 'product', label: 'Produto / serviço', value: existing ? existing.product : '', required: true, full: true },
       { key: 'client', label: 'Cliente', type: 'datalist', options: clients.map(function (c) { return c.name; }), value: existing ? existing.client : '', placeholder: 'Selecione ou digite um nome' },
       { key: 'date', label: 'Data', type: 'date', value: existing ? String(existing.date).slice(0, 10) : new Date().toISOString().slice(0, 10) },
@@ -1011,15 +1011,20 @@
     const cost = root.querySelector('#m_cost');
     const value = root.querySelector('#m_value');
     const qty = root.querySelector('#m_qty');
-    if (!pick) return;
-    pick.addEventListener('change', function () {
+    if (!pick || !qty) return;
+
+    function applySelectedProduct(fillName) {
       const p = findBy('products', pick.value);
       if (!p) return;
-      product.value = p.name || '';
+      if (fillName) product.value = p.name || '';
       const q = Math.max(1, numOr(qty.value, 1));
       cost.value = Calc.r2(numOr(p.cost) * q);
       value.value = Calc.r2(numOr(p.price) * q);
-    });
+    }
+
+    pick.addEventListener('change', function () { applySelectedProduct(true); });
+    qty.addEventListener('input', function () { applySelectedProduct(false); });
+    qty.addEventListener('change', function () { applySelectedProduct(false); });
   }
 
   function saveSale(data, id, old) {

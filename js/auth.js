@@ -30,9 +30,30 @@
     listeners.forEach(function (fn) { try { fn(Auth); } catch (e) { console.error(e); } });
   }
 
+  function ensureClient() {
+    if (client) return client;
+    if (!window.supabase || !window.supabase.createClient) {
+      throw new Error('Biblioteca de autenticação não carregou. Recarregue a página.');
+    }
+    client = window.supabase.createClient(URL, KEY, {
+      auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
+    });
+    client.auth.onAuthStateChange(function (event, s) {
+      session = s || null;
+      if (!session || event === 'SIGNED_OUT') {
+        profile = null;
+        notify();
+        return;
+      }
+      // notifica somente depois de validar o perfil ativo
+      loadProfile().then(notify).catch(notify);
+    });
+    return client;
+  }
+
   async function loadProfile() {
     if (!session) { profile = null; return false; }
-    const result = await client.from('profiles')
+    const result = await ensureClient().from('profiles')
       .select('id, email, full_name, role, active')
       .eq('id', session.user.id)
       .maybeSingle();
@@ -56,41 +77,26 @@
     onChange(fn) { listeners.push(fn); return function () { listeners = listeners.filter(function (f) { return f !== fn; }); }; },
 
     async init() {
-      if (!window.supabase || !window.supabase.createClient) {
-        throw new Error('Biblioteca de autenticação não carregou. Recarregue a página.');
-      }
-      client = window.supabase.createClient(URL, KEY, {
-        auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
-      });
-      client.auth.onAuthStateChange(function (event, s) {
-        session = s || null;
-        if (!session || event === 'SIGNED_OUT') {
-          profile = null;
-          notify();
-          return;
-        }
-        // notifica somente depois de validar o perfil ativo
-        loadProfile().then(notify).catch(notify);
-      });
-      const result = await client.auth.getSession();
+      const supabaseClient = ensureClient();
+      const result = await supabaseClient.auth.getSession();
       session = result.data.session || null;
       if (!session) { profile = null; return false; }
       return loadProfile();
     },
 
     async getToken() {
-      if (!client) return '';
-      const result = await client.auth.getSession();
+      const result = await ensureClient().auth.getSession();
       return (result.data.session && result.data.session.access_token) || '';
     },
 
     async signIn(email, password) {
-      const result = await client.auth.signInWithPassword({ email: email.trim(), password: password });
+      const supabaseClient = ensureClient();
+      const result = await supabaseClient.auth.signInWithPassword({ email: email.trim(), password: password });
       if (result.error) throw new Error(translate(result.error.message));
       session = result.data.session;
       const ok = await loadProfile();
       if (!ok) {
-        await client.auth.signOut();
+        await supabaseClient.auth.signOut();
         session = null;
         throw new Error('Este e-mail não possui um perfil ativo. Procure um administrador.');
       }
@@ -99,23 +105,23 @@
     },
 
     async signOut() {
-      await client.auth.signOut();
+      await ensureClient().auth.signOut();
       session = null;
       profile = null;
       notify();
     },
 
     async rpc(name, params) {
-      const result = await client.rpc(name, params || {});
+      const result = await ensureClient().rpc(name, params || {});
       if (result.error) throw new Error(translate(result.error.message));
       return result.data;
     },
 
     insertDeleteRequest(data) {
-      return client.from('sale_delete_requests').insert(data).select();
+      return ensureClient().from('sale_delete_requests').insert(data).select();
     },
     reviewDeleteRequest(id, data) {
-      return client.from('sale_delete_requests').update(data).eq('id', id);
+      return ensureClient().from('sale_delete_requests').update(data).eq('id', id);
     },
     listUsers() { return Auth.rpc('admin_list_users'); },
     createUser(data) { return Auth.rpc('admin_create_user', data); },
@@ -123,7 +129,7 @@
     deleteUser(id) { return Auth.rpc('admin_delete_user', { p_id: id }); },
 
     async changePassword(password) {
-      const result = await client.auth.updateUser({ password: password });
+      const result = await ensureClient().auth.updateUser({ password: password });
       if (result.error) throw new Error(translate(result.error.message));
       return true;
     }
