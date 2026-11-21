@@ -16,6 +16,10 @@ create table if not exists public.workspace (
 
 alter table public.workspace enable row level security;
 
+-- Permissões explícitas (necessárias em projetos novos do Supabase)
+grant usage on schema public to anon;
+grant select, insert, update, delete on public.workspace to anon;
+
 -- A política abaixo permite o app usar a chave anon (pública) sem login.
 -- Adequada para uso pessoal. Se quiser restringir, troque "to anon" por
 -- "to authenticated" e configure Supabase Auth no app.

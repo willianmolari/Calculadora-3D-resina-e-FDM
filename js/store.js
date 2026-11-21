@@ -71,7 +71,12 @@
           extraFixed: 0
         },
         market: { perGramMin: 0.8, perGramMax: 2.5 },
-        cloud: { url: '', anonKey: '', autoSync: false, lastSync: '' }
+        cloud: {
+          url: 'https://dtdyibtmgprmgnhrgcou.supabase.co',
+          anonKey: 'sb_publishable_yP5Xn0iufcNlX9T4_MM3vg_8ExcJSCl',
+          autoSync: true,
+          lastSync: ''
+        }
       },
       clients: [],
       quotes: [],
@@ -160,14 +165,18 @@
     const c = state.settings.cloud;
     if (!c.url || !c.anonKey) throw new Error('Configure a URL e a chave do Supabase em Configurações.');
     const url = c.url.replace(/\/$/, '') + '/rest/v1/' + TABLE + '?on_conflict=id';
-    const payload = [{ id: state.workspaceId, data: state, updated_at: new Date().toISOString() }];
+    const previousSync = c.lastSync;
+    c.lastSync = new Date().toISOString();
+    const payload = [{ id: state.workspaceId, data: state, updated_at: c.lastSync }];
     const res = await fetch(url, {
       method: 'POST',
       headers: cloudHeaders(c, { 'Prefer': 'resolution=merge-duplicates,return=minimal' }),
       body: JSON.stringify(payload)
     });
-    if (!res.ok) throw new Error('Falha ao enviar (HTTP ' + res.status + '): ' + (await res.text()).slice(0, 180));
-    c.lastSync = new Date().toISOString();
+    if (!res.ok) {
+      c.lastSync = previousSync;
+      throw new Error('Falha ao enviar (HTTP ' + res.status + '): ' + (await res.text()).slice(0, 180));
+    }
   }
 
   async function cloudPull(state) {
@@ -230,7 +239,9 @@
     pullCloud() {
       return cloudPull(state).then(function (remote) {
         if (!remote) return false;
+        const localSync = state.settings.cloud.lastSync;
         state = deepMerge(defaults(), remote);
+        state.settings.cloud.lastSync = [localSync, state.settings.cloud.lastSync].filter(Boolean).sort().pop() || '';
         writeLocal(state);
         Store.notify();
         return true;
