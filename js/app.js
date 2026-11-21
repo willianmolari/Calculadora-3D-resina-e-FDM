@@ -1086,12 +1086,18 @@
             { key: 'reason', label: 'Motivo', type: 'textarea', value: '', required: true, full: true, placeholder: 'Explique por que esta venda deve ser excluída' }
           ], function (d) {
             if (!st.deleteRequests) st.deleteRequests = [];
-            st.deleteRequests.push({
+            const req = {
               id: Store.uid('req'), saleId: id, saleProduct: sale.product, saleClient: sale.client,
               sellerId: currentSellerId(), sellerName: currentSellerName(), reason: d.reason,
               status: 'pending', requestedAt: new Date().toISOString()
-            });
+            };
+            st.deleteRequests.push(req);
             Store.save();
+            if (Auth.insertDeleteRequest) {
+              Auth.insertDeleteRequest({ id: req.id, sale_id: req.saleId, sale_product: req.saleProduct, sale_client: req.saleClient, seller_id: req.sellerId, seller_name: req.sellerName, reason: req.reason, status: req.status })
+                .then(function (r) { if (r && r.error) console.warn('Solicitação não gravada no banco:', r.error.message); })
+                .catch(function (e) { console.warn('Solicitação não gravada no banco:', e.message); });
+            }
             const subject = encodeURIComponent('Solicitação de exclusão de venda · ' + sale.product);
             const body = encodeURIComponent('Olá!\n\nSolicito a exclusão da venda abaixo:\n\nProduto: ' + sale.product + '\nCliente: ' + (sale.client || '—') + '\nValor: ' + money(sale.value) + '\nData: ' + dateBR(sale.date) + '\nVendedor: ' + currentSellerName() + '\nMotivo: ' + d.reason + '\n\nSolicitação registrada no sistema em T&W 3D Maker.');
             window.location.href = 'mailto:williangabriel681@gmail.com?subject=' + subject + '&body=' + body;
@@ -1123,6 +1129,11 @@
             removeItem('sales', req.saleId);
           }
           Store.save();
+          if (Auth.reviewDeleteRequest) {
+            Auth.reviewDeleteRequest(id, { status: req.status, reviewed_at: req.reviewedAt, reviewed_by: req.reviewedBy, review_note: req.reviewNote })
+              .then(function (r) { if (r && r.error) console.warn('Revisão não gravada no banco:', r.error.message); })
+              .catch(function (e) { console.warn('Revisão não gravada no banco:', e.message); });
+          }
           toast(approve ? 'Exclusão aprovada e venda removida.' : 'Solicitação recusada.');
           renderRequests();
           break;

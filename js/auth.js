@@ -111,6 +111,12 @@
       return result.data;
     },
 
+    insertDeleteRequest(data) {
+      return client.from('sale_delete_requests').insert(data).select();
+    },
+    reviewDeleteRequest(id, data) {
+      return client.from('sale_delete_requests').update(data).eq('id', id);
+    },
     listUsers() { return Auth.rpc('admin_list_users'); },
     createUser(data) { return Auth.rpc('admin_create_user', data); },
     updateUser(data) { return Auth.rpc('admin_update_user', data); },
