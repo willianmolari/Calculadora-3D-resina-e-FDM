@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="pt-BR" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Calculadora de custos e orçamentos para impressão 3D FDM e resina, com gestão de vendas, estoque e clientes.">
+  <title>Molari 3D · Calculadora & Gestão</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/styles.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
+  <script defer src="js/store.js"></script>
+  <script defer src="js/calculate.js"></script>
+  <script defer src="js/pdf.js"></script>
+  <script defer src="js/app.js"></script>
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar">
+      <div class="brand">
+        <div class="brand-mark">M<span>3</span>D</div>
+        <div class="brand-text">
+          <strong>Molari 3D</strong>
+          <span>Calculadora & Gestão</span>
+        </div>
+      </div>
+
+      <nav class="nav" aria-label="Navegação principal">
+        <p class="nav-label">GERENCIAR</p>
+        <button class="nav-item active" data-view="dashboard">
+          <span class="nav-icon" data-icon="grid"></span><span>Visão geral</span>
+        </button>
+        <button class="nav-item" data-view="calculator">
+          <span class="nav-icon" data-icon="calc"></span><span>Calculadora</span>
+        </button>
+        <button class="nav-item" data-view="quotes">
+          <span class="nav-icon" data-icon="doc"></span><span>Orçamentos</span>
+          <span class="nav-count" id="countQuotes">0</span>
+        </button>
+        <button class="nav-item" data-view="sales">
+          <span class="nav-icon" data-icon="chart"></span><span>Vendas</span>
+        </button>
+        <button class="nav-item" data-view="products">
+          <span class="nav-icon" data-icon="box"></span><span>Produtos</span>
+        </button>
+
+        <p class="nav-label nav-label-spaced">OPERAÇÃO</p>
+        <button class="nav-item" data-view="inventory">
+          <span class="nav-icon" data-icon="layers"></span><span>Estoque</span>
+          <span class="nav-count alert" id="countStock">0</span>
+        </button>
+        <button class="nav-item" data-view="services">
+          <span class="nav-icon" data-icon="sparkle"></span><span>Serviços</span>
+        </button>
+        <button class="nav-item" data-view="clients">
+          <span class="nav-icon" data-icon="users"></span><span>Clientes</span>
+        </button>
+
+        <p class="nav-label nav-label-spaced">SISTEMA</p>
+        <button class="nav-item" data-view="settings">
+          <span class="nav-icon" data-icon="gear"></span><span>Configurações</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="sync-pill" id="syncPill"><span class="dot"></span><span id="syncText">Salvo localmente</span></div>
+        <small>v1.0 · Curitiba/PR</small>
+      </div>
+    </aside>
+
+    <div class="main-wrap">
+      <header class="topbar">
+        <button class="icon-btn mobile-only" id="menuBtn" aria-label="Abrir menu">
+          <span data-icon="menu"></span>
+        </button>
+        <div class="page-heading">
+          <h1 id="pageTitle">Visão geral</h1>
+          <p id="pageSubtitle">Seu negócio em números, sempre atualizado.</p>
+        </div>
+        <div class="top-actions">
+          <button class="btn ghost" id="themeBtn" title="Alternar tema claro/escuro"><span data-icon="moon"></span></button>
+          <button class="btn primary" id="newQuoteBtn"><span data-icon="plus"></span> <span class="btn-label">Novo orçamento</span></button>
+        </div>
+      </header>
+
+      <main class="content" id="main">
+        <!-- DASHBOARD -->
+        <section class="view" data-view="dashboard">
+          <div class="hero-banner">
+            <div>
+              <span class="eyebrow">PAINEL DE CONTROLE</span>
+              <h2>Bom trabalho, Willian.</h2>
+              <p>Acompanhe faturamento, custos e margem em tempo real.</p>
+            </div>
+            <div class="hero-orb" aria-hidden="true"></div>
+          </div>
+
+          <div class="kpi-grid" id="kpis"></div>
+
+          <div class="grid-2">
+            <div class="card">
+              <div class="card-header">
+                <div><h3>Faturamento por mês</h3><p>Receita e lucro dos últimos 6 meses</p></div>
+                <div class="legend"><span class="legend-item"><i class="swatch blue"></i>Receita</span><span class="legend-item"><i class="swatch green"></i>Lucro</span></div>
+              </div>
+              <div class="chart" id="chart"></div>
+            </div>
+            <div class="card">
+              <div class="card-header">
+                <div><h3>Alertas & pendências</h3><p>O que precisa da sua atenção</p></div>
+              </div>
+              <div id="alerts" class="alert-list"></div>
+            </div>
+          </div>
+
+          <div class="grid-2">
+            <div class="card">
+              <div class="card-header">
+                <div><h3>Últimas vendas</h3><p>Registro mais recente da operação</p></div>
+                <button class="link-btn" data-go="sales">Ver todas</button>
+              </div>
+              <div class="table-wrap" id="recentSales"></div>
+            </div>
+            <div class="card">
+              <div class="card-header">
+                <div><h3>Produtos mais lucrativos</h3><p>Por lucro acumulado</p></div>
+              </div>
+              <div id="topProducts" class="rank-list"></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- CALCULATOR -->
+        <section class="view hidden" data-view="calculator">
+          <div class="calc-layout">
+            <div class="card calc-form">
+              <div class="card-header">
+                <div><h3>Dados do orçamento</h3><p>Preencha os dados da peça e veja o preço ideal.</p></div>
+                <button class="link-btn" id="clearCalc">Limpar</button>
+              </div>
+
+              <div class="segmented" id="processSegment">
+                <button class="seg active" data-process="fdm">Filamento · FDM</button>
+                <button class="seg" data-process="resin">Resina · SLA</button>
+              </div>
+
+              <div class="form-grid">
+                <div class="field full">
+                  <label for="inTitle">Nome da peça / serviço</label>
+                  <input id="inTitle" type="text" placeholder="Ex.: Suporte para headset" value="Peça impressa 3D">
+                </div>
+                <div class="field">
+                  <label for="inClient">Cliente</label>
+                  <select id="inClient"></select>
+                </div>
+                <div class="field">
+                  <label for="inMaterial">Material</label>
+                  <select id="inMaterial"></select>
+                </div>
+                <div class="field" id="fieldWeight">
+                  <label for="inWeight">Peso do material (g)</label>
+                  <input id="inWeight" type="number" min="0" step="1" value="100">
+                  <small id="weightHint">Use o peso do fatiador, com suportes.</small>
+                </div>
+                <div class="field">
+                  <label for="inHours">Horas de impressão</label>
+                  <input id="inHours" type="number" min="0" step="0.1" value="4">
+                  <small>Tempo estimado pelo fatiador.</small>
+                </div>
+                <div class="field">
+                  <label for="inQty">Quantidade</label>
+                  <input id="inQty" type="number" min="1" step="1" value="1">
+                </div>
+                <div class="field" id="fieldColors">
+                  <label for="inColors">Cores (AMS)</label>
+                  <input id="inColors" type="number" min="1" max="16" step="1" value="1">
+                  <small>Cada cor extra gera purga e tempo.</small>
+                </div>
+                <div class="field">
+                  <label for="inPainting">Pintura / acabamento</label>
+                  <select id="inPainting">
+                    <option value="none">Sem pintura</option>
+                    <option value="simple">Simples — R$ 20,00</option>
+                    <option value="complex">Complexa — R$ 50,00</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="inSetup">Preparação (min)</label>
+                  <input id="inSetup" type="number" min="0" step="1" value="15">
+                </div>
+                <div class="field">
+                  <label for="inFinishing">Acabamento por peça (min)</label>
+                  <input id="inFinishing" type="number" min="0" step="1" value="10">
+                </div>
+                <div class="field">
+                  <label for="inPackaging">Embalagem por peça (R$)</label>
+                  <input id="inPackaging" type="number" min="0" step="0.5" value="2">
+                </div>
+                <div class="field">
+                  <label for="inShipping">Frete / entrega (R$)</label>
+                  <input id="inShipping" type="number" min="0" step="1" value="0">
+                </div>
+                <div class="field full">
+                  <label for="inPrice">Preço desejado (opcional)</label>
+                  <input id="inPrice" type="number" min="0" step="0.01" placeholder="Deixe vazio para usar o preço ideal">
+                  <small>Se preenchido, calculamos a margem real sobre a venda.</small>
+                </div>
+                <div class="field full">
+                  <label for="inNotes">Observações</label>
+                  <textarea id="inNotes" rows="2" placeholder="Prazo, detalhes do acabamento, etc."></textarea>
+                </div>
+              </div>
+
+              <div class="form-actions">
+                <button class="btn secondary" id="saveQuoteBtn"><span data-icon="save"></span> Salvar orçamento</button>
+                <button class="btn primary" id="pdfBtn"><span data-icon="pdf"></span> Gerar PDF</button>
+              </div>
+            </div>
+
+            <div class="calc-results" id="results"></div>
+          </div>
+        </section>
+
+        <!-- QUOTES -->
+        <section class="view hidden" data-view="quotes">
+          <div class="card">
+            <div class="card-header">
+              <div><h3>Orçamentos</h3><p>Todos os orçamentos salvos, com status e valor.</p></div>
+              <div class="header-actions">
+                <select id="quoteFilter" class="compact-select">
+                  <option value="all">Todos os status</option>
+                  <option value="draft">Rascunho</option>
+                  <option value="sent">Enviado</option>
+                  <option value="approved">Aprovado</option>
+                  <option value="done">Concluído</option>
+                </select>
+              </div>
+            </div>
+            <div class="table-wrap" id="quotesTable"></div>
+          </div>
+        </section>
+
+        <!-- SALES -->
+        <section class="view hidden" data-view="sales">
+          <div class="kpi-grid kpi-grid-4" id="salesKpis"></div>
+          <div class="card">
+            <div class="card-header">
+              <div><h3>Vendas registradas</h3><p>Receita, custo e lucro de cada venda.</p></div>
+              <button class="btn secondary small" id="addSaleBtn" data-action="sale-new"><span data-icon="plus"></span> Nova venda</button>
+            </div>
+            <div class="table-wrap" id="salesTable"></div>
+          </div>
+        </section>
+
+        <!-- PRODUCTS -->
+        <section class="view hidden" data-view="products">
+          <div class="card">
+            <div class="card-header">
+              <div><h3>Catálogo de produtos</h3><p>Seus itens recorrentes com custo e preço de referência.</p></div>
+              <button class="btn secondary small" id="addProductBtn" data-action="product-new"><span data-icon="plus"></span> Novo produto</button>
+            </div>
+            <div class="table-wrap" id="productsTable"></div>
+          </div>
+        </section>
+
+        <!-- INVENTORY -->
+        <section class="view hidden" data-view="inventory">
+          <div class="kpi-grid kpi-grid-3" id="stockKpis"></div>
+          <div class="card">
+            <div class="card-header">
+              <div><h3>Estoque de insumos</h3><p>Filamentos e resinas. O consumo é baixado ao concluir uma venda.</p></div>
+              <button class="btn secondary small" id="addStockBtn" data-action="stock-new"><span data-icon="plus"></span> Novo item</button>
+            </div>
+            <div class="table-wrap" id="stockTable"></div>
+          </div>
+          <div class="card">
+            <div class="card-header"><div><h3>Movimentações</h3><p>Entradas, saídas e ajustes de estoque.</p></div></div>
+            <div class="table-wrap" id="movementsTable"></div>
+          </div>
+        </section>
+
+        <!-- SERVICES -->
+        <section class="view hidden" data-view="services">
+          <div class="card">
+            <div class="card-header">
+              <div><h3>Serviços</h3><p>Serviços adicionais que você oferece: modelagem, pintura, montagem etc.</p></div>
+              <button class="btn secondary small" id="addServiceBtn" data-action="service-new"><span data-icon="plus"></span> Novo serviço</button>
+            </div>
+            <div class="table-wrap" id="servicesTable"></div>
+          </div>
+        </section>
+
+        <!-- CLIENTS -->
+        <section class="view hidden" data-view="clients">
+          <div class="card">
+            <div class="card-header">
+              <div><h3>Clientes</h3><p>Cadastre para gerar orçamentos com dados completos.</p></div>
+              <button class="btn secondary small" id="addClientBtn" data-action="client-new"><span data-icon="plus"></span> Novo cliente</button>
+            </div>
+            <div class="table-wrap" id="clientsTable"></div>
+          </div>
+        </section>
+
+        <!-- SETTINGS -->
+        <section class="view hidden" data-view="settings">
+          <div id="settingsContent"></div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <div id="modalRoot"></div>
+  <div id="toastRoot" class="toast-root" aria-live="polite"></div>
+  <div id="overlay" class="overlay hidden"></div>
+</body>
+</html>
