@@ -444,13 +444,34 @@
   }
 
   /* ---------- Produtos ---------- */
+  function productCategoryOptions() {
+    const cats = [];
+    S().products.forEach(function (p) {
+      const c = String(p.category || '').trim();
+      if (c && cats.indexOf(c) < 0) cats.push(c);
+    });
+    return cats.sort(function (a, b) { return a.localeCompare(b, 'pt-BR'); });
+  }
+
   function renderProducts() {
-    const list = S().products;
+    const st = S();
+    const filterSel = $('productCategoryFilter');
+    const selected = filterSel ? filterSel.value : 'all';
+    const categories = productCategoryOptions();
+    if (filterSel) {
+      filterSel.innerHTML = '<option value="all">Todas as categorias</option>' +
+        categories.map(function (c) { return '<option value="' + esc(c) + '">' + esc(c) + '</option>'; }).join('');
+      filterSel.value = categories.indexOf(selected) >= 0 ? selected : 'all';
+    }
+    const active = filterSel ? filterSel.value : 'all';
+    const list = st.products.filter(function (p) {
+      return active === 'all' || String(p.category || '').trim() === active;
+    });
     $('productsTable').innerHTML = list.length ? '<table><thead><tr><th>Produto</th><th>Categoria</th><th class="num">Custo</th><th class="num">Preço</th><th class="num">Margem</th><th></th></tr></thead><tbody>' +
       list.map(function (p) {
         const m = numOr(p.price) ? (numOr(p.price) - numOr(p.cost)) / numOr(p.price) * 100 : 0;
         return '<tr><td><strong>' + esc(p.name) + '</strong><span class="sub">' + esc(p.description || '') + '</span></td><td>' + esc(p.category || '—') + '</td><td class="num">' + money(p.cost) + '</td><td class="num"><strong>' + money(p.price) + '</strong></td><td class="num ' + (m >= 40 ? 'positive' : 'negative') + '">' + Calc.r2(m) + '%</td><td><div class="row-actions"><button class="icon-action" data-action="product-edit" data-id="' + p.id + '"><span data-icon="edit"></span></button><button class="icon-action danger" data-action="product-delete" data-id="' + p.id + '"><span data-icon="trash"></span></button></div></td></tr>';
-      }).join('') + '</tbody></table>' : emptyState('Cadastre produtos recorrentes para agilizar suas vendas.');
+      }).join('') + '</tbody></table>' : emptyState(active === 'all' ? 'Cadastre produtos recorrentes para agilizar suas vendas.' : 'Nenhum produto nesta categoria.');
   }
 
   /* ---------- Estoque ---------- */
@@ -672,19 +693,27 @@
   }
 
   /* ---------- Modais ---------- */
-  function openModal(title, subtitle, fields, onSubmit, submitLabel) {
+  function openModal(title, subtitle, fields, onSubmit, submitLabel, onRender) {
     const root = $('modalRoot');
     const formHtml = fields.map(function (f) {
       const id = 'm_' + f.key;
       let control;
       if (f.type === 'select') {
-        control = '<select id="' + id + '">' + f.options.map(function (o) {
+        control = '<select id="' + id + '"' + (f.disabled ? ' disabled' : '') + '>' + f.options.map(function (o) {
           return '<option value="' + esc(o[0]) + '"' + (String(f.value) === String(o[0]) ? ' selected' : '') + '>' + esc(o[1]) + '</option>';
         }).join('') + '</select>';
       } else if (f.type === 'textarea') {
         control = '<textarea id="' + id + '" rows="3">' + esc(f.value || '') + '</textarea>';
+      } else if (f.type === 'datalist') {
+        const listId = id + '_list';
+        control = '<input id="' + id + '" type="text" list="' + listId + '" value="' + esc(f.value == null ? '' : f.value) + '" placeholder="' + esc(f.placeholder || '') + '"' + (f.required ? ' required' : '') + ' autocomplete="off">' +
+          '<datalist id="' + listId + '">' + (f.options || []).map(function (o) {
+            const val = Array.isArray(o) ? o[0] : o;
+            const label = Array.isArray(o) ? o[1] : o;
+            return '<option value="' + esc(val) + '">' + esc(label) + '</option>';
+          }).join('') + '</datalist>';
       } else {
-        control = '<input id="' + id + '" type="' + (f.type || 'text') + '" step="any" value="' + esc(f.value == null ? '' : f.value) + '"' + (f.required ? ' required' : '') + '>';
+        control = '<input id="' + id + '" type="' + (f.type || 'text') + '" step="any" value="' + esc(f.value == null ? '' : f.value) + '"' + (f.required ? ' required' : '') + (f.placeholder ? ' placeholder="' + esc(f.placeholder) + '"' : '') + '>';
       }
       return '<div class="field' + (f.full || f.type === 'textarea' ? ' full' : '') + '"><label for="' + id + '">' + esc(f.label) + '</label>' + control + (f.hint ? '<small>' + esc(f.hint) + '</small>' : '') + '</div>';
     }).join('');
@@ -694,6 +723,7 @@
       '<button type="button" class="btn secondary" data-action="modal-close">Cancelar</button>' +
       '<button type="submit" class="btn primary">' + esc(submitLabel || 'Salvar') + '</button></div></form></div>';
     $('overlay').classList.remove('hidden');
+    if (typeof onRender === 'function') onRender(root);
     $('modalForm').addEventListener('submit', function (ev) {
       ev.preventDefault();
       const out = {};
@@ -788,9 +818,12 @@
   }
 
   function saleForm(existing) {
+    const products = S().products.slice().sort(function (a, b) { return String(a.name || '').localeCompare(String(b.name || ''), 'pt-BR'); });
+    const clients = S().clients.slice().sort(function (a, b) { return String(a.name || '').localeCompare(String(b.name || ''), 'pt-BR'); });
     return [
+      { key: 'productPick', label: 'Selecionar produto cadastrado', type: 'select', options: [['', '— preencher manualmente —']].concat(products.map(function (p) { return [p.id, p.name + (p.category ? ' · ' + p.category : '')]; })), value: '', full: true, hint: 'Ao selecionar, preenche produto, custo e valor. Você ainda pode editar.' },
       { key: 'product', label: 'Produto / serviço', value: existing ? existing.product : '', required: true, full: true },
-      { key: 'client', label: 'Cliente', value: existing ? existing.client : '' },
+      { key: 'client', label: 'Cliente', type: 'datalist', options: clients.map(function (c) { return c.name; }), value: existing ? existing.client : '', placeholder: 'Selecione ou digite um nome' },
       { key: 'date', label: 'Data', type: 'date', value: existing ? String(existing.date).slice(0, 10) : new Date().toISOString().slice(0, 10) },
       { key: 'qty', label: 'Quantidade', type: 'number', value: existing ? existing.qty : 1 },
       { key: 'cost', label: 'Custo total (R$)', type: 'number', value: existing ? existing.cost : 0 },
@@ -800,10 +833,29 @@
     ];
   }
 
+  function wireSaleForm(root) {
+    const pick = root.querySelector('#m_productPick');
+    const product = root.querySelector('#m_product');
+    const cost = root.querySelector('#m_cost');
+    const value = root.querySelector('#m_value');
+    const qty = root.querySelector('#m_qty');
+    if (!pick) return;
+    pick.addEventListener('change', function () {
+      const p = findBy('products', pick.value);
+      if (!p) return;
+      product.value = p.name || '';
+      const q = Math.max(1, numOr(qty.value, 1));
+      cost.value = Calc.r2(numOr(p.cost) * q);
+      value.value = Calc.r2(numOr(p.price) * q);
+    });
+  }
+
   function saveSale(data, id, old) {
-    const item = Object.assign({ id: id || Store.uid('sale') }, data);
+    const payload = Object.assign({}, data);
+    delete payload.productPick;
+    const item = Object.assign({ id: id || Store.uid('sale') }, payload);
     upsert('sales', item);
-    if (!old && data.material && numOr(data.consumedQty) > 0) consumeStock(data.material, numOr(data.consumedQty), 'Venda: ' + data.product);
+    if (!old && payload.material && numOr(payload.consumedQty) > 0) consumeStock(payload.material, numOr(payload.consumedQty), 'Venda: ' + payload.product);
     toast('Venda registrada.');
   }
 
@@ -951,7 +1003,7 @@
           break;
         }
 
-        case 'sale-new': openModal('Nova venda', 'Registro manual de receita e custo.', saleForm(), function (d) { saveSale(d); }); break;
+        case 'sale-new': openModal('Nova venda', 'Registro manual de receita e custo.', saleForm(), function (d) { saveSale(d); }, 'Salvar venda', wireSaleForm); break;
 
         case 'user-new':
           openModal('Novo usuário', 'Acesso administrativo ao sistema.', userForm(), function (d) {
@@ -1051,6 +1103,7 @@
       toast('Configuração salva.');
     }
     if (t.id === 'quoteFilter') renderQuotes();
+    if (t.id === 'productCategoryFilter') renderProducts();
   });
 
   document.addEventListener('input', function (ev) {

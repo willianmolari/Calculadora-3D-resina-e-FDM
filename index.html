@@ -268,7 +268,12 @@
           <div class="card">
             <div class="card-header">
               <div><h3>Catálogo de produtos</h3><p>Seus itens recorrentes com custo e preço de referência.</p></div>
-              <button class="btn secondary small" id="addProductBtn" data-action="product-new"><span data-icon="plus"></span> Novo produto</button>
+              <div class="header-actions">
+                <select id="productCategoryFilter" class="compact-select">
+                  <option value="all">Todas as categorias</option>
+                </select>
+                <button class="btn secondary small" id="addProductBtn" data-action="product-new"><span data-icon="plus"></span> Novo produto</button>
+              </div>
             </div>
             <div class="table-wrap" id="productsTable"></div>
           </div>
