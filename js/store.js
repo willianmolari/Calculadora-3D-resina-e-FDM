@@ -7,15 +7,22 @@
   const DB_NAME = 'molari3d';
   const DB_STORE = 'kv';
   const STATE_KEY = 'app-state';
+  // ID único e compartilhado: todos os usuários leem e gravam este mesmo registro.
+  const WORKSPACE_ID = 'tw3d-main';
 
   function uid(prefix) {
     return (prefix || 'id') + '_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
   }
 
+  function forceWorkspaceId(s) {
+    s.workspaceId = WORKSPACE_ID;
+    return s;
+  }
+
   function defaults() {
     return {
       version: 1,
-      workspaceId: uid('ws'),
+      workspaceId: WORKSPACE_ID,
       settings: {
         company: {
           name: 'T&W 3D Maker',
@@ -197,22 +204,26 @@
   let state = defaults();
   let listeners = [];
   let saveTimer = null;
+  let initialized = false;
 
   const Store = {
     uid: uid,
     get state() { return state; },
     get settings() { return state.settings; },
+    get pendingSave() { return !!saveTimer; },
 
     async init() {
+      if (initialized) return state;
       const saved = await readLocal();
       if (saved && saved.settings) {
-        state = deepMerge(defaults(), saved);
+        state = forceWorkspaceId(deepMerge(defaults(), saved));
       }
       // migrações de compatibilidade
       if (state.settings.company.name === 'Molari 3D') state.settings.company.name = 'T&W 3D Maker';
       if (!state.settings.commission) state.settings.commission = { sellerShare: 50 };
       if (!Array.isArray(state.deleteRequests)) state.deleteRequests = [];
       await writeLocal(state);
+      initialized = true;
       return state;
     },
 
@@ -237,7 +248,7 @@
     },
 
     replace(next) {
-      state = next;
+      state = forceWorkspaceId(next);
       writeLocal(state);
       Store.notify();
     },
@@ -247,7 +258,7 @@
       return cloudPull(state).then(function (remote) {
         if (!remote) return false;
         const localSync = state.settings.cloud.lastSync;
-        state = deepMerge(defaults(), remote);
+        state = forceWorkspaceId(deepMerge(defaults(), remote));
         state.settings.cloud.lastSync = [localSync, state.settings.cloud.lastSync].filter(Boolean).sort().pop() || '';
         writeLocal(state);
         Store.notify();
@@ -255,12 +266,35 @@
       });
     },
 
+    // Fonte da verdade: busca o registro central no login e, se ainda não existir,
+    // publica o estado atual para criar esse registro compartilhado.
+    async sync() {
+      await Store.init();
+      if (!state.settings.cloud.autoSync) return 'local';
+      try {
+        const remote = await cloudPull(state);
+        if (remote) {
+          state = forceWorkspaceId(deepMerge(defaults(), remote));
+          state.settings.cloud.lastSync = new Date().toISOString();
+          await writeLocal(state);
+          Store.notify();
+          return 'pulled';
+        }
+        await cloudPush(state);
+        await writeLocal(state);
+        return 'pushed';
+      } catch (e) {
+        console.warn('Sync:', e.message);
+        return 'error';
+      }
+    },
+
     exportJSON() { return JSON.stringify(state, null, 2); },
 
     importJSON(text) {
       const parsed = JSON.parse(text);
       if (!parsed || !parsed.settings) throw new Error('Arquivo inválido: não contém configurações.');
-      state = deepMerge(defaults(), parsed);
+      state = forceWorkspaceId(deepMerge(defaults(), parsed));
       writeLocal(state);
       Store.notify();
     },

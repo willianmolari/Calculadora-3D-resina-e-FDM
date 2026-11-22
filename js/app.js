@@ -1530,11 +1530,43 @@
     showLogin();
   });
 
+  let syncing = false;
+
+  // Busca sempre o registro central antes de mostrar os dados a um usuário autenticado.
+  async function syncFromCloud() {
+    if (syncing) return;
+    syncing = true;
+    try { await Store.sync(); }
+    catch (e) { console.warn('Não foi possível sincronizar:', e.message); }
+    finally { syncing = false; }
+  }
+
+  // Atualização leve sem criar registro: usada enquanto a sessão já está ativa.
+  async function refreshFromCloud() {
+    if (syncing || Store.pendingSave) return;
+    syncing = true;
+    try { await Store.pullCloud(); }
+    catch (e) { console.warn('Atualização automática:', e.message); }
+    finally { syncing = false; }
+  }
+
   Auth.onChange(function (a) {
     const shellVisible = !document.querySelector('.app-shell').classList.contains('hidden');
     if (!a.ready) { if (shellVisible) showLogin(); return; }
-    if (booted && !appStarted && !$('loginScreen').classList.contains('hidden')) showApp();
+    if (booted && !appStarted && !$('loginScreen').classList.contains('hidden')) {
+      syncFromCloud().then(showApp);
+    }
   });
+
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden || !Auth.ready || !appStarted) return;
+    refreshFromCloud();
+  });
+
+  setInterval(function () {
+    if (!Auth.ready || !appStarted || document.hidden) return;
+    refreshFromCloud();
+  }, 60000);
 
   async function init() {
     await Store.init();
@@ -1542,6 +1574,7 @@
     try { await Auth.init(); }
     catch (e) { console.error(e); }
     if (!Auth.ready) { showLogin(); return; }
+    await syncFromCloud();
     showApp();
   }
   init();

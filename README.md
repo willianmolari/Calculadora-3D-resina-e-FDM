@@ -46,7 +46,11 @@ python3 -m http.server 8000
 1. Crie um projeto em [supabase.com](https://supabase.com) (plano Free).
 2. No **SQL Editor**, execute o conteúdo de [`supabase/schema.sql`](supabase/schema.sql).
 3. Em **Project Settings → API**, copie a **Project URL** e a **publishable key** (`sb_publishable_...`). As credenciais de login são entregues separadamente aos administradores.
-4. No app, abra **Configurações → Banco de dados na nuvem**, cole os valores e use **Enviar para a nuvem** / **Baixar da nuvem**. Ative a sincronização automática se quiser.
+4. No app, abra **Configurações → Banco de dados na nuvem**, cole os valores e mantenha a **sincronização automática** ligada.
+
+Todos os usuários usam o **mesmo registro central** (`workspace = tw3d-main`) no Supabase. A cada login o app busca esse registro no servidor antes de exibir os dados; alterações feitas por outro administrador também são atualizadas ao trocar de aba ou a cada 60 segundos. O armazenamento local (IndexedDB/localStorage) é apenas um cache temporário para funcionar sem internet — ele nunca é a origem dos dados e é sobrescrito pela versão do servidor no próximo acesso.
+
+> Ao atualizar um projeto já existente, execute o `schema.sql` novamente no SQL Editor. IDs antigos no formato `ws_...` não são mais usados; o estado local do primeiro acesso é migrado para `tw3d-main`.
 
 A chave publicada (`sb_publishable_...`) é própria para uso no navegador. O RLS exige `authenticated` **e** perfil ativo para ler/gravar o workspace (compartilhado). As funções `admin_*` usam `SECURITY DEFINER` e validam o perfil do chamador antes de agir. Solicitações de exclusão são gravadas em `public.sale_delete_requests`: o vendedor cria apenas a própria (`seller_id = auth.uid()`), e somente admin pode aprovar/recusar.
 
@@ -87,8 +91,10 @@ custo total = materiais + energia + desgaste + mão de obra + pós-processo
 
 preço ideal = custo total ÷ (1 − 0,65)
 preço mínimo = custo total ÷ (1 − 0,40)
-lucro = preço − custo total
-margem = lucro ÷ preço  (não é markup sobre o custo)
+lucro bruto = preço − custo total
+comissão = lucro bruto × percentual do vendedor (padrão 50%)
+lucro da empresa = lucro bruto − comissão
+margem = lucro bruto ÷ preço  (não é markup sobre o custo)
 ```
 
 ## Estrutura
